@@ -1,30 +1,125 @@
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::io::{Error as IOError};
 
 use csv::Reader;
 use rayon::prelude::*;
 
-use crate::{Table, Value};
+use crate::{Table, TableSlice, TableError};
+use crate::value::Value;
+use std::ops::Index;
+use std::collections::hash_map::RandomState;
 
 ///
 /// A table with row-oriented data
 ///
+#[derive(Debug, Clone)]
 pub struct RowTable {
     columns: Vec<String>,
-    rows: Vec<Vec<Option<Value>>>
+    rows: Vec<Vec<Value>>
 }
 
 impl Table for RowTable {
+    fn group_by(&self, column: &str) -> Result<HashMap<&Value, TableSlice<RowTable>>, TableError> {
+        // get the position in the row we're concerned with
+        let pos = if let Some(pos) = self.columns.iter().position(|c| c == column) {
+            pos
+        } else {
+            return Err(TableError::new(format!("Column {} not found in table", column).as_str()));
+        };
+
+        let mut ret = HashMap::new();
+        let empty_slice = TableSlice {
+            columns: self.columns.clone(),
+            rows: Vec::new(),
+            table: self
+        };
+
+        // go through each row, and add them to our result
+        for (i, row) in self.rows.iter().enumerate() {
+            // get the slice, or create a new one
+//            let slice = ret.get_mut(&row[pos]).unwrap_or(empty_slice.clone());
+
+            let slice = ret.entry(&row[pos]).or_insert(empty_slice.clone());
+
+            // insert this row
+            slice.rows.push(i);
+        }
+
+        Ok(ret)
+    }
+
+    ///
+    /// Returns the unique values for a given column
+    ///
+    fn unique(&self, column: &str) -> Result<HashSet<&Value, RandomState>, TableError> {
+        // get the position in the row we're concerned with
+        let pos = if let Some(pos) = self.columns.iter().position(|c| c == column) {
+            pos
+        } else {
+            return Err(TableError::new(format!("Column {} not found in table", column).as_str()));
+        };
+
+        let mut ret = HashSet::new();
+
+        // in parallel insert the values into the HashSet
+        ret.par_extend(self.rows.par_iter().map(|row| &row[pos]));
+
+        Ok(ret)
+    }
+
+    fn append(&mut self, row :&Vec<&str>) {
+        let values = row.iter().map(|s| Value::new(*s)).collect::<Vec<_>>();
+
+        self.append_values(values);
+    }
+
+    fn append_values(&mut self, row: Vec<Value>) {
+        self.rows.push(row);
+    }
+
+    fn find(&self, column: &str, value: &Value) -> Result<TableSlice<RowTable>, TableError> {
+        // get the position in the row we're concerned with
+        let pos = if let Some(pos) = self.columns.iter().position(|c| c == column) {
+            pos
+        } else {
+            return Err(TableError::new(format!("Column {} not found in table", column).as_str()));
+        };
+
+        self.find_by(|row| row[pos] == *value)
+    }
+
+    fn find_by<P: FnMut(&Vec<Value>) -> bool>(&self, mut predicate :P) -> Result<TableSlice<RowTable>, TableError> {
+        let mut slice_rows = Vec::new();
+
+        for (i, row) in self.rows.iter().enumerate() {
+            if predicate(row) {
+                slice_rows.push(i);
+            }
+        }
+
+        Ok(TableSlice {
+            columns: self.columns.clone(),
+            rows: slice_rows,
+            table: self
+        })
+    }
 }
 
 impl RowTable {
-    fn new(columns :&[String]) -> impl Table {
+    ///
+    /// Create a blank RowTable
+    ///
+    fn new(columns :&[&str]) -> impl Table {
         RowTable {
-            columns: Vec::from(columns),
+            columns: columns.into_iter().map(|s| String::from(*s)).collect::<Vec<_>>(),
             rows: Vec::new()
         }
     }
 
+    ///
+    /// Read in a CSV file, and construct a RowTable
+    ///
     fn from_csv<P: AsRef<Path>>(path: P) -> Result<impl Table, IOError> {
         let mut csv = Reader::from_path(path)?;
 
@@ -43,7 +138,9 @@ impl RowTable {
             let mut table_row = Vec::with_capacity(columns.len());
 
             for c in 0..columns.len() {
-                table_row.push(csv_row.get(c).map(|v| Value::new(v)));
+                let val = csv_row.get(c);
+
+                table_row.push(match val { Some(s) => Value::new(s), None => Value::Empty });
             }
 
             table_row

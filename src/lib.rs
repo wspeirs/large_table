@@ -6,52 +6,57 @@ extern crate log;
 
 use std::io::{Error as IOError, Read};
 use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::error::Error;
+use std::fmt::{Display, Formatter, Error as FmtError};
 
-use chrono::{Local};
-use chrono::naive::{NaiveDateTime};
-use dtparse::parse;
-
+mod value;
 mod row_table;
+
+use value::Value;
 
 ///
 /// The main interface into the mem_table library
 ///
 pub trait Table {
+    fn group_by(&self, column :&str) -> Result<HashMap<&Value, TableSlice<Self>>, TableError> where Self: Sized;
+    fn unique(&self, column :&str) -> Result<HashSet<&Value>, TableError>;
+
+    fn append(&mut self, row :&Vec<&str>);
+    fn append_values(&mut self, row :Vec<Value>);
+
+    fn find(&self, column :&str, value :&Value) -> Result<TableSlice<Self>, TableError> where Self: Sized;
+    fn find_by<P: FnMut(&Vec<Value>) -> bool>(&self, predicate :P) -> Result<TableSlice<Self>, TableError> where Self: Sized;
 }
 
-///
-/// Various types of values found in the cells of a Table
-///
-pub enum Value {
-    String(String),
-    DateTime(NaiveDateTime),
-    Integer(i64),
-    Float(f64)
+#[derive(Debug, Clone)]
+pub struct TableSlice<'a, T: Table> {
+    columns: Vec<String>,
+    rows: Vec<usize>,
+    table: &'a T
 }
 
-impl Value {
-    fn new(value :&str) -> Value {
-//        debug!("Value: {}", value);
+#[derive(Debug, Clone)]
+pub struct TableError {
+    reason: String
+}
 
-        // first attempt to parse as a DateTime
-        if value.contains(":") || value.contains("-") {
-            if let Ok((dt, _offset)) = parse(value) {
-                return Value::DateTime(dt);
-            }
-        }
+impl Error for TableError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        // Generic error, underlying cause isn't tracked.
+        None
+    }
+}
 
-        // next attempt to parse as a float
-        if let Ok(f) = value.parse::<f64>() {
-            return Value::Float(f);
-        }
+impl Display for TableError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        writeln!(f, "{}", self.reason)
+    }
+}
 
-        // next as an integer
-        if let Ok(i) = value.parse::<i64>() {
-            return Value::Integer(i);
-        }
-
-        // finally, just go with a string
-        Value::String(String::from(value))
+impl TableError {
+    fn new(reason :&str) -> TableError {
+        TableError { reason: String::from(reason) }
     }
 }
 
@@ -59,5 +64,7 @@ impl Value {
 #[cfg(test)] extern crate simple_logger;
 #[cfg(test)] extern crate rand;
 #[cfg(test)] use std::sync::{Once};
+use std::hash::{Hash, Hasher};
+
 #[cfg(test)] static LOGGER_INIT: Once = Once::new();
 
