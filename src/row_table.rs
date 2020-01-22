@@ -5,7 +5,7 @@ use std::io::{Error as IOError};
 use csv::Reader;
 use rayon::prelude::*;
 
-use crate::{Table, TableSlice, TableError};
+use crate::{Table, TableSlice, TableError, RowIter, RowIntoIter};
 use crate::value::Value;
 use std::ops::Index;
 use std::collections::hash_map::RandomState;
@@ -104,13 +104,30 @@ impl Table for RowTable {
             table: self
         })
     }
+
+    fn iter(&self) -> RowIter {
+        RowIter{ iter: self.rows.iter() }
+    }
+
+    fn into_iter(self) -> RowIntoIter {
+        RowIntoIter(self.rows)
+    }
+}
+
+impl IntoIterator for RowTable {
+    type Item = Vec<Value>;
+    type IntoIter = RowIntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        RowIntoIter(self.rows)
+    }
 }
 
 impl RowTable {
     ///
     /// Create a blank RowTable
     ///
-    fn new(columns :&[&str]) -> impl Table {
+    pub fn new(columns :&[&str]) -> RowTable {
         RowTable {
             columns: columns.into_iter().map(|s| String::from(*s)).collect::<Vec<_>>(),
             rows: Vec::new()
@@ -120,7 +137,7 @@ impl RowTable {
     ///
     /// Read in a CSV file, and construct a RowTable
     ///
-    fn from_csv<P: AsRef<Path>>(path: P) -> Result<impl Table, IOError> {
+    pub fn from_csv<P: AsRef<Path>>(path: P) -> Result<impl Table, IOError> {
         let mut csv = Reader::from_path(path)?;
 
         // get the headers from the CSV file
@@ -162,8 +179,9 @@ mod tests {
     use log::Level;
     use chrono::Duration;
 
-    use crate::row_table::RowTable;
     use crate::LOGGER_INIT;
+    use crate::row_table::RowTable;
+    use crate::Table;
 
     #[test]
     fn from_csv() {
@@ -176,5 +194,24 @@ mod tests {
         let end = Instant::now();
 
         println!("DONE: {}s", (end-start).as_secs());
+    }
+
+    #[test]
+    fn new_append() {
+        let mut table = RowTable::new(&["A", "B"]);
+
+        table.append(&vec!["1", "2.3"]);
+
+        for row in table.iter() {
+            println!("{:?}", row);
+        }
+
+        for row in table {
+            println!("{:?}", row);
+        }
+
+        for row in &table {
+            println!("{:?}", row);
+        }
     }
 }

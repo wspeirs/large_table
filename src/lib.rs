@@ -19,6 +19,16 @@ use value::Value;
 /// The main interface into the mem_table library
 ///
 pub trait Table {
+    fn iter(&self) -> RowIter;
+    fn into_iter(self) -> RowIntoIter;
+//    fn row_mut_iter(&mut self) -> RowMutIter;
+
+    // iterators that only return some of the columns
+    // TODO: Think about this... maybe it's just a TableSliceIterator
+//    fn col_iter(&self, cols :&Vec<&str>) -> ColIter;
+//    fn col_into_iter(self, cols :&Vec<&str>) -> ColIntoIter;
+//    fn col_mut_iter(&mut self, cols :&Vec<&str>) -> ColMutIter;
+
     fn group_by(&self, column :&str) -> Result<HashMap<&Value, TableSlice<Self>>, TableError> where Self: Sized;
     fn unique(&self, column :&str) -> Result<HashSet<&Value>, TableError>;
 
@@ -28,6 +38,44 @@ pub trait Table {
     fn find(&self, column :&str, value :&Value) -> Result<TableSlice<Self>, TableError> where Self: Sized;
     fn find_by<P: FnMut(&Vec<Value>) -> bool>(&self, predicate :P) -> Result<TableSlice<Self>, TableError> where Self: Sized;
 }
+
+//
+// Row-oriented iterators
+//
+pub struct RowIter<'a> {
+    iter: core::slice::Iter<'a, Vec<Value>>
+}
+
+impl <'a> Iterator for RowIter<'a> {
+    type Item = &'a Vec<Value>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+pub struct RowIntoIter(Vec<Vec<Value>>);
+
+impl Iterator for RowIntoIter {
+    type Item = Vec<Value>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.pop()
+    }
+}
+
+//pub struct RowTableIterMut<'a> {
+//    mut_iter: core::slice::IterMut<'a, Vec<Value>>
+//}
+//
+//impl <'a> Iterator for RowTableIterMut<'a> {
+//    type Item = &'a mut Vec<Value>;
+//
+//    fn next(&mut self) -> Option<Self::Item> {
+//        self.mut_iter.next()
+//    }
+//}
+
 
 #[derive(Debug, Clone)]
 pub struct TableSlice<'a, T: Table> {
