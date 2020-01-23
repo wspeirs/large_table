@@ -76,13 +76,8 @@ impl Table for RowTable {
         Ok(ret)
     }
 
-    fn append(&mut self, table :&impl Table) {
-//        self.rows.extend(table.iter());
-
-//        self.rows.extend(&table.into_iter());
-//        let values = row.iter().map(|s| Value::new(*s)).collect::<Vec<_>>();
-
-//        self.append_row(values);
+    fn append(&mut self, table :impl Table) {
+        self.rows.extend(table.into_iter());
     }
 
     fn append_row(&mut self, row: Vec<Value>) {

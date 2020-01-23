@@ -32,7 +32,7 @@ pub trait Table {
     fn group_by(&self, column :&str) -> Result<HashMap<&Value, TableSlice<Self>>, TableError> where Self: Sized;
     fn unique(&self, column :&str) -> Result<HashSet<&Value>, TableError>;
 
-    fn append(&mut self, table :&impl Table);
+    fn append(&mut self, table :impl Table);
     fn append_row(&mut self, row :Vec<Value>);
 
     /// Adds a column with `column_name` to the end of the table filling in all rows with `value`.
