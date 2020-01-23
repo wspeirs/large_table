@@ -46,3 +46,27 @@ impl Value {
         Value::String(String::from(value))
     }
 }
+
+impl From<Value> for String {
+    fn from(value :Value) -> Self {
+        match value {
+            Value::String(s) => String::from(s),
+            Value::DateTime(dt) => format!("{}", dt),
+            Value::Float(f) => format!("{}", f),
+            Value::Integer(i) => format!("{}", i),
+            Value::Empty => String::new(),
+        }
+    }
+}
+
+impl From<&Value> for String {
+    fn from(value :&Value) -> Self {
+        match value {
+            Value::String(s) => String::from(s),
+            Value::DateTime(dt) => format!("{}", dt),
+            Value::Float(f) => format!("{}", f),
+            Value::Integer(i) => format!("{}", i),
+            Value::Empty => String::new(),
+        }
+    }
+}

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::io::{Error as IOError};
 
-use csv::Reader;
+use csv::{Reader, Writer};
 use rayon::prelude::*;
 
 use crate::{Table, TableSlice, TableError, RowIter, RowIntoIter};
@@ -26,6 +26,25 @@ impl Table for RowTable {
 
     fn into_iter(self) -> RowIntoIter {
         RowIntoIter(self.rows)
+    }
+
+    #[inline]
+    fn columns(&self) -> &Vec<String> {
+        &self.columns
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    #[inline]
+    fn width(&self) -> usize {
+        if self.rows.is_empty() {
+            self.columns.len()
+        } else {
+            self.rows.first().unwrap().len()
+        }
     }
 
     fn group_by(&self, column: &str) -> Result<HashMap<&Value, TableSlice<RowTable>>, TableError> {
@@ -76,12 +95,24 @@ impl Table for RowTable {
         Ok(ret)
     }
 
-    fn append(&mut self, table :impl Table) {
-        self.rows.extend(table.into_iter());
+    fn append(&mut self, table :impl Table) -> Result<(), TableError> {
+        // make sure the columns are the same
+        if !self.columns.iter().zip(table.columns().iter()).all(|(a, b)| a == b) {
+            let err_str = format!("Columns don't match between tables: {:?} != {:?}", self.columns, table.columns());
+            return Err(TableError::new(err_str.as_str()));
+        }
+
+        Ok(self.rows.extend(table.into_iter()))
     }
 
-    fn append_row(&mut self, row: Vec<Value>) {
-        self.rows.push(row);
+    fn append_row(&mut self, row: Vec<Value>) -> Result<(), TableError> {
+        // make sure the rows are the same width
+        if self.width() != row.len() {
+            let err_str = format!("Row widths don't match: {} != {}", self.width(), row.len());
+            return Err(TableError::new(err_str.as_str()));
+        }
+
+        Ok(self.rows.push(row))
     }
 
     fn add_column(&mut self, column_name :&str, value :&Value) {
@@ -119,6 +150,20 @@ impl Table for RowTable {
             rows: slice_rows,
             table: self
         })
+    }
+
+    fn to_csv(&self, csv_path: &Path) -> Result<(), TableError> {
+        let mut csv = Writer::from_path(csv_path).map_err(|e| TableError::new(e.to_string().as_str()))?;
+
+        // write out the headers first
+        csv.write_record(&self.columns);
+
+        // go through each row, writing the records converted to Strings
+        for row in self.iter() {
+            csv.write_record(row.iter().map(|f| String::from(f)));
+        }
+
+        Ok( () )
     }
 }
 
