@@ -32,8 +32,16 @@ pub trait Table {
     fn group_by(&self, column :&str) -> Result<HashMap<&Value, TableSlice<Self>>, TableError> where Self: Sized;
     fn unique(&self, column :&str) -> Result<HashSet<&Value>, TableError>;
 
-    fn append(&mut self, row :&Vec<&str>);
-    fn append_values(&mut self, row :Vec<Value>);
+    fn append(&mut self, table :&impl Table);
+    fn append_row(&mut self, row :Vec<Value>);
+
+    /// Adds a column with `column_name` to the end of the table filling in all rows with `value`.
+    /// This method works in parallel and is therefore usually faster than `add_column_with`
+    fn add_column(&mut self, column_name :&str, value :&Value);
+
+    /// Adds a column with `column_name` to the end of the table using `f` to generate the values for each row.
+    /// This method works a row-at-a-time and therefore can be slower than `add_column`.
+    fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, f :F);
 
     fn find(&self, column :&str, value :&Value) -> Result<TableSlice<Self>, TableError> where Self: Sized;
     fn find_by<P: FnMut(&Vec<Value>) -> bool>(&self, predicate :P) -> Result<TableSlice<Self>, TableError> where Self: Sized;
@@ -52,6 +60,15 @@ impl <'a> Iterator for RowIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
     }
+}
+
+impl <'a> DoubleEndedIterator for RowIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back()
+    }
+}
+
+impl <'a> ExactSizeIterator for RowIter<'a> {
 }
 
 pub struct RowIntoIter(Vec<Vec<Value>>);
@@ -113,6 +130,7 @@ impl TableError {
 #[cfg(test)] extern crate rand;
 #[cfg(test)] use std::sync::{Once};
 use std::hash::{Hash, Hasher};
+use std::cell::Ref;
 
 #[cfg(test)] static LOGGER_INIT: Once = Once::new();
 

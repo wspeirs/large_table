@@ -20,6 +20,14 @@ pub struct RowTable {
 }
 
 impl Table for RowTable {
+    fn iter(&self) -> RowIter {
+        RowIter{ iter: self.rows.iter() }
+    }
+
+    fn into_iter(self) -> RowIntoIter {
+        RowIntoIter(self.rows)
+    }
+
     fn group_by(&self, column: &str) -> Result<HashMap<&Value, TableSlice<RowTable>>, TableError> {
         // get the position in the row we're concerned with
         let pos = if let Some(pos) = self.columns.iter().position(|c| c == column) {
@@ -68,14 +76,27 @@ impl Table for RowTable {
         Ok(ret)
     }
 
-    fn append(&mut self, row :&Vec<&str>) {
-        let values = row.iter().map(|s| Value::new(*s)).collect::<Vec<_>>();
+    fn append(&mut self, table :&impl Table) {
+//        self.rows.extend(table.iter());
 
-        self.append_values(values);
+//        self.rows.extend(&table.into_iter());
+//        let values = row.iter().map(|s| Value::new(*s)).collect::<Vec<_>>();
+
+//        self.append_row(values);
     }
 
-    fn append_values(&mut self, row: Vec<Value>) {
+    fn append_row(&mut self, row: Vec<Value>) {
         self.rows.push(row);
+    }
+
+    fn add_column(&mut self, column_name :&str, value :&Value) {
+        self.columns.push(String::from(column_name));
+        self.rows.par_iter_mut().for_each(|row| row.push(value.clone()));
+    }
+
+    fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, mut f :F) {
+        self.columns.push(String::from(column_name));
+        self.rows.iter_mut().for_each(|row| row.push(f()));
     }
 
     fn find(&self, column: &str, value: &Value) -> Result<TableSlice<RowTable>, TableError> {
@@ -103,14 +124,6 @@ impl Table for RowTable {
             rows: slice_rows,
             table: self
         })
-    }
-
-    fn iter(&self) -> RowIter {
-        RowIter{ iter: self.rows.iter() }
-    }
-
-    fn into_iter(self) -> RowIntoIter {
-        RowIntoIter(self.rows)
     }
 }
 
@@ -182,6 +195,7 @@ mod tests {
     use crate::LOGGER_INIT;
     use crate::row_table::RowTable;
     use crate::Table;
+    use crate::value::Value;
 
     #[test]
     fn from_csv() {
@@ -199,18 +213,15 @@ mod tests {
     #[test]
     fn new_append() {
         let mut table = RowTable::new(&["A", "B"]);
+        let row = ["1", "2.3"].iter().map(|x| Value::new(x)).collect::<Vec<_>>();
 
-        table.append(&vec!["1", "2.3"]);
+        table.append_row(row);
 
         for row in table.iter() {
             println!("{:?}", row);
         }
 
         for row in table {
-            println!("{:?}", row);
-        }
-
-        for row in &table {
             println!("{:?}", row);
         }
     }
