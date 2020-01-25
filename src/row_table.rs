@@ -2,10 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::io::{Error as IOError};
 
-use csv::{Reader, Writer};
+use csv::{Reader};
 use rayon::prelude::*;
 
-use crate::{Table, TableSlice, TableError, RowIter, RowIntoIter};
+use crate::{Table, TableOperations, TableSlice, TableError, RowIter, RowIntoIter};
 use crate::value::Value;
 use std::ops::Index;
 use std::collections::hash_map::RandomState;
@@ -19,7 +19,7 @@ pub struct RowTable {
     rows: Vec<Vec<Value>>
 }
 
-impl Table for RowTable {
+impl TableOperations for RowTable {
     fn iter(&self) -> RowIter {
         RowIter{ iter: self.rows.iter() }
     }
@@ -76,9 +76,7 @@ impl Table for RowTable {
         Ok(ret)
     }
 
-    ///
     /// Returns the unique values for a given column
-    ///
     fn unique(&self, column: &str) -> Result<HashSet<&Value, RandomState>, TableError> {
         // get the position in the row we're concerned with
         let pos = if let Some(pos) = self.columns.iter().position(|c| c == column) {
@@ -151,46 +149,19 @@ impl Table for RowTable {
             table: self
         })
     }
-
-    fn to_csv(&self, csv_path: &Path) -> Result<(), TableError> {
-        let mut csv = Writer::from_path(csv_path).map_err(|e| TableError::new(e.to_string().as_str()))?;
-
-        // write out the headers first
-        csv.write_record(&self.columns);
-
-        // go through each row, writing the records converted to Strings
-        for row in self.iter() {
-            csv.write_record(row.iter().map(|f| String::from(f)));
-        }
-
-        Ok( () )
-    }
 }
 
-impl IntoIterator for RowTable {
-    type Item = Vec<Value>;
-    type IntoIter = RowIntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        RowIntoIter(self.rows)
-    }
-}
-
-impl RowTable {
-    ///
+impl Table for RowTable {
     /// Create a blank RowTable
-    ///
-    pub fn new(columns :&[&str]) -> RowTable {
+    fn new(columns :&[&str]) -> Self {
         RowTable {
             columns: columns.into_iter().map(|s| String::from(*s)).collect::<Vec<_>>(),
             rows: Vec::new()
         }
     }
 
-    ///
     /// Read in a CSV file, and construct a RowTable
-    ///
-    pub fn from_csv<P: AsRef<Path>>(path: P) -> Result<impl Table, IOError> {
+    fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self, IOError> {
         let mut csv = Reader::from_path(path)?;
 
         // get the headers from the CSV file
@@ -223,6 +194,16 @@ impl RowTable {
     }
 }
 
+impl IntoIterator for RowTable {
+    type Item = Vec<Value>;
+    type IntoIter = RowIntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        RowIntoIter(self.rows)
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -234,7 +215,7 @@ mod tests {
 
     use crate::LOGGER_INIT;
     use crate::row_table::RowTable;
-    use crate::Table;
+    use crate::{Table, TableOperations};
     use crate::value::Value;
 
     #[test]
@@ -252,7 +233,7 @@ mod tests {
 
     #[test]
     fn new_append() {
-        let mut table = RowTable::new(&["A", "B"]);
+        let mut table :RowTable = Table::new(&["A", "B"]);
         let row = ["1", "2.3"].iter().map(|x| Value::new(x)).collect::<Vec<_>>();
 
         table.append_row(row);

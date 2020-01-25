@@ -8,6 +8,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Error as FmtError};
 
 use rayon::prelude::*;
+use csv::{Writer};
 
 mod value;
 mod row_table;
@@ -16,10 +17,7 @@ mod row_table;
 pub use crate::row_table::RowTable;
 pub use crate::value::Value;
 
-///
-/// The main interface into the mem_table library
-///
-pub trait Table {
+pub trait TableOperations {
     fn iter(&self) -> RowIter;
     fn into_iter(self) -> RowIntoIter;
 //    fn row_mut_iter(&mut self) -> RowMutIter;
@@ -28,13 +26,7 @@ pub trait Table {
     fn len(&self) -> usize;
     fn width(&self) -> usize;
 
-    // iterators that only return some of the columns
-    // TODO: Think about this... maybe it's just a TableSliceIterator
-//    fn col_iter(&self, cols :&Vec<&str>) -> ColIter;
-//    fn col_into_iter(self, cols :&Vec<&str>) -> ColIntoIter;
-//    fn col_mut_iter(&mut self, cols :&Vec<&str>) -> ColMutIter;
-
-    fn group_by(&self, column :&str) -> Result<HashMap<&Value, TableSlice<Self>>, TableError> where Self: Sized;
+    fn group_by(&self, column :&str) -> Result<HashMap<&Value, TableSlice<Self>>, TableError> where Self: Table + Sized;
     fn unique(&self, column :&str) -> Result<HashSet<&Value>, TableError>;
 
     fn append(&mut self, table :impl Table) -> Result<(), TableError>;
@@ -48,10 +40,33 @@ pub trait Table {
     /// This method works a row-at-a-time and therefore can be slower than `add_column`.
     fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, f :F);
 
-    fn find(&self, column :&str, value :&Value) -> Result<TableSlice<Self>, TableError> where Self: Sized;
-    fn find_by<P: FnMut(&Vec<Value>) -> bool>(&self, predicate :P) -> Result<TableSlice<Self>, TableError> where Self: Sized;
+    fn find(&self, column :&str, value :&Value) -> Result<TableSlice<Self>, TableError> where Self: Table + Sized;
+    fn find_by<P: FnMut(&Vec<Value>) -> bool>(&self, predicate :P) -> Result<TableSlice<Self>, TableError> where Self: Table + Sized;
+}
 
-    fn to_csv(&self, csv_path :&Path) -> Result<(), TableError>;
+
+/// The main interface into the mem_table library
+pub trait Table: TableOperations {
+    /// Create a blank RowTable
+    fn new(columns :&[&str]) -> Self;
+
+    /// Read in a CSV file, and construct a RowTable
+    fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self, IOError> where Self: Sized;
+
+    /// Write a table out to a CSV file
+    fn to_csv(&self, csv_path :&Path) -> Result<(), TableError> {
+        let mut csv = Writer::from_path(csv_path).map_err(|e| TableError::new(e.to_string().as_str()))?;
+
+        // write out the headers first
+        csv.write_record(self.columns());
+
+        // go through each row, writing the records converted to Strings
+        for row in self.iter() {
+            csv.write_record(row.iter().map(|f| String::from(f)));
+        }
+
+        Ok( () )
+    }
 }
 
 //
