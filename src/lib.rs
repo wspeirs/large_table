@@ -6,8 +6,12 @@ use std::path::Path;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter, Error as FmtError};
+use std::hash::{Hash, Hasher};
+use std::cell::Ref;
+use std::iter::FusedIterator;
 
-use rayon::prelude::*;
+use rayon::iter::ParallelExtend;
+use rayon::prelude::IntoParallelIterator;
 use csv::{Writer};
 
 mod value;
@@ -39,6 +43,17 @@ pub trait Table<'a, T: TableSlice<'a, T>>: TableOperations<'a, T> {
 
         Ok( () )
     }
+
+    fn append<'b, S: TableSlice<'b, S>>(&mut self, table :impl Table<'b, S>) -> Result<(), TableError>;
+    fn append_row(&mut self, row :Vec<Value>) -> Result<(), TableError>;
+
+    /// Adds a column with `column_name` to the end of the table filling in all rows with `value`.
+    /// This method works in parallel and is therefore usually faster than `add_column_with`
+    fn add_column(&mut self, column_name :&str, value :&Value) -> Result<(), TableError>;
+
+    /// Adds a column with `column_name` to the end of the table using `f` to generate the values for each row.
+    /// This method works a row-at-a-time and therefore can be slower than `add_column`.
+    fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, f :F) -> Result<(), TableError>;
 }
 
 /// Operations that can be performed on `Table`s or `TableSlice`s.
@@ -53,17 +68,6 @@ pub trait TableOperations<'a, T: TableSlice<'a, T>> {
 
     fn group_by(&'a self, column :&str) -> Result<HashMap<&Value, T>, TableError>;
     fn unique(&self, column :&str) -> Result<HashSet<&Value>, TableError>;
-
-    fn append<'b, S: TableSlice<'b, S>>(&mut self, table :impl Table<'b, S>) -> Result<(), TableError>;
-    fn append_row(&mut self, row :Vec<Value>) -> Result<(), TableError>;
-
-    /// Adds a column with `column_name` to the end of the table filling in all rows with `value`.
-    /// This method works in parallel and is therefore usually faster than `add_column_with`
-    fn add_column(&mut self, column_name :&str, value :&Value);
-
-    /// Adds a column with `column_name` to the end of the table using `f` to generate the values for each row.
-    /// This method works a row-at-a-time and therefore can be slower than `add_column`.
-    fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, f :F);
 
     fn find(&'a self, column :&str, value :&Value) -> Result<T, TableError>;
     fn find_by<P: FnMut(&Vec<Value>) -> bool>(&'a self, predicate :P) -> Result<T, TableError>;
@@ -96,15 +100,27 @@ impl <'a> DoubleEndedIterator for RowIter<'a> {
 
 impl <'a> ExactSizeIterator for RowIter<'a> { }
 
-pub struct RowIntoIter(Vec<Vec<Value>>);
+impl <'a> FusedIterator for RowIter<'a> { }
+
+pub struct RowIntoIter(std::vec::IntoIter<Vec<Value>>);
 
 impl Iterator for RowIntoIter {
     type Item = Vec<Value>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.pop()
+        self.0.next()
     }
 }
+
+impl DoubleEndedIterator for RowIntoIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back()
+    }
+}
+
+impl ExactSizeIterator for RowIntoIter { }
+
+impl FusedIterator for RowIntoIter { }
 
 //pub struct RowTableIterMut {
 //    mut_iter: core::slice::IterMut<'a, Vec<Value>>
@@ -146,10 +162,5 @@ impl TableError {
 #[cfg(test)] extern crate simple_logger;
 #[cfg(test)] extern crate rand;
 #[cfg(test)] use std::sync::{Once};
-use std::hash::{Hash, Hasher};
-use std::cell::Ref;
-use rayon::iter::ParallelExtend;
-use rayon::prelude::IntoParallelIterator;
-
 #[cfg(test)] static LOGGER_INIT: Once = Once::new();
 
