@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::io::{Error as IOError};
+use std::io::{Error as IOError, ErrorKind};
 
 use csv::{Reader};
 use rayon::prelude::*;
@@ -21,18 +21,9 @@ pub struct RowTable {
 
 #[derive(Debug, Clone)]
 pub struct RowTableSlice<'a> {
-    columns: Vec<String>,
-    rows: Vec<usize>,
-    table: &'a RowTable
-}
-
-// get's the position of a column, or returns error on failure
-fn get_position(columns :&Vec<String>, column :&str) -> Result<usize, TableError> {
-    if let Some(pos) = columns.iter().position(|c| c == column) {
-        Ok(pos)
-    } else {
-        Err(TableError::new(format!("Column {} not found in table", column).as_str()))
-    }
+    columns: Vec<String>,   // the columns in this slice's view
+    rows: Vec<usize>,       // index of the corresponding row in the Table
+    table: &'a RowTable     // reference to the underlying table
 }
 
 impl <'a> Table<'a, RowTableSlice<'a>> for RowTable {
@@ -51,6 +42,10 @@ impl <'a> Table<'a, RowTableSlice<'a>> for RowTable {
         // get the headers from the CSV file
         let columns = csv.headers()?.iter().map(|h| String::from(h)).collect::<Vec<_>>();
         let mut rows = Vec::new();
+
+        if columns.iter().collect::<HashSet<_>>().len() != columns.len() {
+            return Err(IOError::new(ErrorKind::InvalidData, "Duplicate columns detected in the file"));
+        }
 
         // go through each row, in parallel, and insert it into rows vector
         rows.par_extend(csv.records().par_bridge().map(|result| {
@@ -77,16 +72,6 @@ impl <'a> Table<'a, RowTableSlice<'a>> for RowTable {
         })
     }
 
-    fn append<'b, T: TableSlice<'b, T>>(&mut self, table :impl Table<'b, T>) -> Result<(), TableError> {
-        // make sure the columns are the same
-        if !self.columns.iter().zip(table.columns().iter()).all(|(a, b)| a == b) {
-            let err_str = format!("Columns don't match between tables: {:?} != {:?}", self.columns, table.columns());
-            return Err(TableError::new(err_str.as_str()));
-        }
-
-        Ok(self.rows.extend(table.into_iter()))
-    }
-
     fn append_row(&mut self, row: Vec<Value>) -> Result<(), TableError> {
         // make sure the rows are the same width
         if self.width() != row.len() {
@@ -97,23 +82,9 @@ impl <'a> Table<'a, RowTableSlice<'a>> for RowTable {
         Ok(self.rows.push(row))
     }
 
-    fn add_column(&mut self, column_name :&str, value :&Value) -> Result<(), TableError> {
-        // make sure we're not duplicating column names
-        if let Ok(_) = get_position(&self.columns, column_name) {
-            let err_str = format!("Attempting to add duplicate column: {} already exists", column_name);
-            return Err(TableError::new(err_str.as_str()));
-        }
-
-        // add the columns and default value
-        self.columns.push(String::from(column_name));
-        self.rows.par_iter_mut().for_each(|row| row.push(value.clone()));
-
-        Ok( () )
-    }
-
     fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, mut f :F) -> Result<(), TableError> {
         // make sure we're not duplicating column names
-        if let Ok(_) = get_position(&self.columns, column_name) {
+        if let Ok(_) = self.column_position(column_name) {
             let err_str = format!("Attempting to add duplicate column: {} already exists", column_name);
             return Err(TableError::new(err_str.as_str()));
         }
@@ -139,23 +110,9 @@ impl <'a> TableOperations<'a, RowTableSlice<'a>> for RowTable {
         &self.columns
     }
 
-    #[inline]
-    fn len(&self) -> usize {
-        self.rows.len()
-    }
-
-    #[inline]
-    fn width(&self) -> usize {
-        if self.rows.is_empty() {
-            self.columns.len()
-        } else {
-            self.rows.first().unwrap().len()
-        }
-    }
-
     fn group_by(&'a self, column: &str) -> Result<HashMap<&Value, RowTableSlice>, TableError> {
         // get the position in the row we're concerned with
-        let pos = get_position(&self.columns, column)?;
+        let pos = self.column_position(column)?;
 
         let mut ret = HashMap::new();
         let empty_slice = RowTableSlice {
@@ -167,8 +124,6 @@ impl <'a> TableOperations<'a, RowTableSlice<'a>> for RowTable {
         // go through each row, and add them to our result
         for (i, row) in self.rows.iter().enumerate() {
             // get the slice, or create a new one
-//            let slice = ret.get_mut(&row[pos]).unwrap_or(empty_slice.clone());
-
             let slice = ret.entry(&row[pos]).or_insert(empty_slice.clone());
 
             // insert this row
@@ -176,30 +131,6 @@ impl <'a> TableOperations<'a, RowTableSlice<'a>> for RowTable {
         }
 
         Ok(ret)
-    }
-
-    /// Returns the unique values for a given column
-    fn unique(&self, column: &str) -> Result<HashSet<&Value, RandomState>, TableError> {
-        // get the position in the row we're concerned with
-        let pos = get_position(&self.columns, column)?;
-
-        let mut ret = HashSet::new();
-
-        // in parallel insert the values into the HashSet
-        ret.par_extend(self.rows.par_iter().map(|row| &row[pos]));
-
-        Ok(ret)
-    }
-
-    fn find(&'a self, column: &str, value: &Value) -> Result<RowTableSlice, TableError> {
-        // get the position in the row we're concerned with
-        let pos = if let Some(pos) = self.columns.iter().position(|c| c == column) {
-            pos
-        } else {
-            return Err(TableError::new(format!("Column {} not found in table", column).as_str()));
-        };
-
-        self.find_by(|row| row[pos] == *value)
     }
 
     fn find_by<P: FnMut(&Vec<Value>) -> bool>(&'a self, mut predicate :P) -> Result<RowTableSlice, TableError> {
@@ -228,32 +159,30 @@ impl <'a> TableOperations<'a, RowTableSlice<'a>> for RowTableSlice<'a> {
         unimplemented!()
     }
 
+    #[inline]
     fn columns(&self) -> &Vec<String> {
         &self.columns
     }
 
-    fn len(&self) -> usize {
-        self.rows.len()
-    }
-
-    fn width(&self) -> usize {
-        self.columns.len()
-    }
-
     fn group_by(&'a self, column: &str) -> Result<HashMap<&Value, RowTableSlice<'a>>, TableError> {
-        unimplemented!()
+        unimplemented!();
     }
 
-    fn unique(&self, column: &str) -> Result<HashSet<&Value, RandomState>, TableError> {
-        unimplemented!()
-    }
+    fn find_by<P: FnMut(&Vec<Value>) -> bool>(&'a self, mut predicate: P) -> Result<RowTableSlice<'a>, TableError> {
+        let mut slice_rows = Vec::new();
 
-    fn find(&'a self, column: &str, value: &Value) -> Result<RowTableSlice<'a>, TableError> {
-        unimplemented!()
-    }
+        for &row_index in self.rows.iter() {
+            // run the predicate against the row
+            if predicate(&self.table.rows[row_index]) {
+                slice_rows.push(row_index);
+            }
+        }
 
-    fn find_by<P: FnMut(&Vec<Value>) -> bool>(&'a self, predicate: P) -> Result<RowTableSlice<'a>, TableError> {
-        unimplemented!()
+        Ok(RowTableSlice {
+            columns: self.columns.clone(),
+            rows: slice_rows,
+            table: self.table
+        })
     }
 }
 
