@@ -1,4 +1,3 @@
-use chrono::{Local};
 use chrono::naive::{NaiveDateTime};
 use dtparse::parse;
 use ordered_float::OrderedFloat;

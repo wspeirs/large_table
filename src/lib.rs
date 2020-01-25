@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate log;
 
-use std::io::{Error as IOError, Read};
+use std::io::{Error as IOError};
 use std::path::Path;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -17,36 +17,8 @@ mod row_table;
 pub use crate::row_table::RowTable;
 pub use crate::value::Value;
 
-pub trait TableOperations {
-    fn iter(&self) -> RowIter;
-    fn into_iter(self) -> RowIntoIter;
-//    fn row_mut_iter(&mut self) -> RowMutIter;
-
-    fn columns(&self) -> &Vec<String>;
-    fn len(&self) -> usize;
-    fn width(&self) -> usize;
-
-    fn group_by(&self, column :&str) -> Result<HashMap<&Value, TableSlice<Self>>, TableError> where Self: Table + Sized;
-    fn unique(&self, column :&str) -> Result<HashSet<&Value>, TableError>;
-
-    fn append(&mut self, table :impl Table) -> Result<(), TableError>;
-    fn append_row(&mut self, row :Vec<Value>) -> Result<(), TableError>;
-
-    /// Adds a column with `column_name` to the end of the table filling in all rows with `value`.
-    /// This method works in parallel and is therefore usually faster than `add_column_with`
-    fn add_column(&mut self, column_name :&str, value :&Value);
-
-    /// Adds a column with `column_name` to the end of the table using `f` to generate the values for each row.
-    /// This method works a row-at-a-time and therefore can be slower than `add_column`.
-    fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, f :F);
-
-    fn find(&self, column :&str, value :&Value) -> Result<TableSlice<Self>, TableError> where Self: Table + Sized;
-    fn find_by<P: FnMut(&Vec<Value>) -> bool>(&self, predicate :P) -> Result<TableSlice<Self>, TableError> where Self: Table + Sized;
-}
-
-
 /// The main interface into the mem_table library
-pub trait Table: TableOperations {
+pub trait Table<'a, T: TableSlice<'a, T>>: TableOperations<'a, T> {
     /// Create a blank RowTable
     fn new(columns :&[&str]) -> Self;
 
@@ -68,6 +40,38 @@ pub trait Table: TableOperations {
         Ok( () )
     }
 }
+
+/// Operations that can be performed on `Table`s or `TableSlice`s.
+pub trait TableOperations<'a, T: TableSlice<'a, T>> {
+    fn iter(&self) -> RowIter;
+    fn into_iter(self) -> RowIntoIter;
+//    fn row_mut_iter(&mut self) -> RowMutIter;
+
+    fn columns(&self) -> &Vec<String>;
+    fn len(&self) -> usize;
+    fn width(&self) -> usize;
+
+    fn group_by(&'a self, column :&str) -> Result<HashMap<&Value, T>, TableError>;
+    fn unique(&self, column :&str) -> Result<HashSet<&Value>, TableError>;
+
+    fn append<'b, S: TableSlice<'b, S>>(&mut self, table :impl Table<'b, S>) -> Result<(), TableError>;
+    fn append_row(&mut self, row :Vec<Value>) -> Result<(), TableError>;
+
+    /// Adds a column with `column_name` to the end of the table filling in all rows with `value`.
+    /// This method works in parallel and is therefore usually faster than `add_column_with`
+    fn add_column(&mut self, column_name :&str, value :&Value);
+
+    /// Adds a column with `column_name` to the end of the table using `f` to generate the values for each row.
+    /// This method works a row-at-a-time and therefore can be slower than `add_column`.
+    fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, f :F);
+
+    fn find(&'a self, column :&str, value :&Value) -> Result<T, TableError>;
+    fn find_by<P: FnMut(&Vec<Value>) -> bool>(&'a self, predicate :P) -> Result<T, TableError>;
+}
+
+/// A `TableSlice` is a view into a `Table`.
+pub trait TableSlice<'a, T: TableSlice<'a, T>>: TableOperations<'a, T> { }
+
 
 //
 // Row-oriented iterators
@@ -102,24 +106,17 @@ impl Iterator for RowIntoIter {
     }
 }
 
-//pub struct RowTableIterMut<'a> {
+//pub struct RowTableIterMut {
 //    mut_iter: core::slice::IterMut<'a, Vec<Value>>
 //}
 //
-//impl <'a> Iterator for RowTableIterMut<'a> {
+//impl  Iterator for RowTableIterMut {
 //    type Item = &'a mut Vec<Value>;
 //
 //    fn next(&mut self) -> Option<Self::Item> {
 //        self.mut_iter.next()
 //    }
 //}
-
-#[derive(Debug, Clone)]
-pub struct TableSlice<'a, T: Table> {
-    columns: Vec<String>,
-    rows: Vec<usize>,
-    table: &'a T
-}
 
 #[derive(Debug, Clone)]
 pub struct TableError {
