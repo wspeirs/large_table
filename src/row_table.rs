@@ -211,34 +211,45 @@ mod tests {
     use crate::row_table::RowTable;
     use crate::{Table, TableOperations};
     use crate::value::Value;
+    use ordered_float::OrderedFloat;
 
-    #[test]
-    fn from_csv() {
-        LOGGER_INIT.call_once(|| simple_logger::init_with_level(Level::Debug).unwrap()); // this will panic on error
-
-        let path = Path::new("/export/stock_stuff/199x.csv");
-
-        let start = Instant::now();
-        let table = RowTable::from_csv(path).expect("Error creating RowTable");
-        let end = Instant::now();
-
-        println!("DONE: {}s", (end-start).as_secs());
-    }
+//    #[test]
+//    fn from_csv() {
+//        LOGGER_INIT.call_once(|| simple_logger::init_with_level(Level::Debug).unwrap()); // this will panic on error
+//
+//        let path = Path::new("/export/stock_stuff/199x.csv");
+//
+//        let start = Instant::now();
+//        let table = RowTable::from_csv(path).expect("Error creating RowTable");
+//        let end = Instant::now();
+//
+//        println!("DONE: {}s", (end-start).as_secs());
+//    }
 
     #[test]
     fn new_append() {
-        let mut table :RowTable = Table::new(&["A", "B"]);
-        let row = ["1", "2.3"].iter().map(|x| Value::new(x)).collect::<Vec<_>>();
+        let mut t1 :RowTable = Table::new(&["A", "B"]);
+        let mut t2 :RowTable = Table::new(&["A", "B"]);
 
-//        row.into_iter();
-        table.append_row(row);
+        t1.append_row(vec![Value::new("1"), Value::new("2.3")]);
+        t1.append_row(vec![Value::new("2"), Value::new("hello")]);
 
-        for row in table.iter() {
-            println!("{:?}", row);
-        }
+        assert_eq!(2, t1.iter().count());
 
-        for row in table {
-            println!("{:?}", row);
-        }
+        t2.append(t1);
+        assert_eq!(2, t2.iter().count());
+    }
+
+    #[test]
+    fn find() {
+        let mut t1 :RowTable = Table::new(&["A", "B"]);
+
+        t1.append_row(vec![Value::new("1"), Value::new("2.3")]);
+        t1.append_row(vec![Value::new("1"), Value::new("7.5")]);
+        t1.append_row(vec![Value::new("2"), Value::new("hello")]);
+
+        let ts = t1.find("A", &Value::Integer(1)).expect("Error finding 1");
+
+        ts.find("B", &Value::Float(OrderedFloat(2.3))).expect("Error finding 2.3");
     }
 }
