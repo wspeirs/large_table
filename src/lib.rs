@@ -9,27 +9,30 @@ use std::fmt::{Display, Formatter, Error as FmtError};
 use std::hash::{Hash, Hasher};
 use std::cell::Ref;
 use std::iter::FusedIterator;
+use std::ops::Index;
 
 use rayon::iter::ParallelExtend;
 use rayon::prelude::IntoParallelIterator;
 use csv::{Writer};
 
 mod value;
-mod row_table;
+//mod row_table;
 
 // expose some of the underlying structures from other files
-pub use crate::row_table::RowTable;
+//pub use crate::row_table::RowTable;
 pub use crate::value::Value;
 
+// Playground: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=98ca951a70269d44cb48230359857f60
+
 /// The main interface into the mem_table library
-pub trait Table<'a, T: TableSlice<'a, T>>: TableOperations<'a, T> {
+pub trait Table<'a, R, RI, I, T>: TableOperations<'a, R, RI, I, T> where R: Row<'a, RI>, RI: Iterator<Item=&'a Value>, I: Iterator<Item=R>, T: TableSlice<'a, R, RI, I, T> {
     /// Create a blank RowTable
     fn new(columns :&[&str]) -> Self;
 
     /// Read in a CSV file, and construct a RowTable
     fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self, IOError> where Self: Sized;
 
-    fn append<'b, O: TableSlice<'b, O>>(&mut self, table :impl TableOperations<'b, O>) -> Result<(), TableError> {
+    fn append<'b, OR: Row<'b, ORI>, ORI: Iterator<Item=&'b Value>, OI: Iterator<Item=OR>, OT: TableSlice<'b, OR, ORI, OI, OT>>(&mut self, table :impl TableOperations<'b, OR, ORI, OI, OT>) -> Result<(), TableError> {
         // make sure the columns are the same
         if !self.columns().iter().zip(table.columns().iter()).all(|(a, b)| a == b) {
             let err_str = format!("Columns don't match between tables: {:?} != {:?}", self.columns(), table.columns());
@@ -57,8 +60,8 @@ pub trait Table<'a, T: TableSlice<'a, T>>: TableOperations<'a, T> {
 }
 
 /// Operations that can be performed on `Table`s or `TableSlice`s.
-pub trait TableOperations<'a, T: TableSlice<'a, T>> {
-    fn iter(&self) -> RowIter;
+pub trait TableOperations<'a, R, RI, I, T> where R: Row<'a, RI>, RI: Iterator<Item=&'a Value>, I: Iterator<Item=R>, T: TableSlice<'a, R, RI, I, T> {
+    fn iter(&self) -> I;
     fn into_iter(self) -> RowIntoIter;
 //    fn row_mut_iter(&mut self) -> RowMutIter;
 
@@ -99,13 +102,13 @@ pub trait TableOperations<'a, T: TableSlice<'a, T>> {
 
     fn group_by(&'a self, column :&str) -> Result<HashMap<&Value, T>, TableError>;
 
-    fn unique(&self, column :&str) -> Result<HashSet<&Value>, TableError>  {
+    fn unique(&self, column :&str) -> Result<HashSet<Value>, TableError>  {
         // get the position in the row we're concerned with
         let pos = self.column_position(column)?;
 
         // insert the values into the HashSet
         // TODO: use Rayon to make this go in parallel
-        Ok(self.iter().map(|row| &row[pos]).collect::<HashSet<_>>())
+        Ok(self.iter().map(|row| row.get(column)).collect::<HashSet<_>>())
     }
 
     /// Returns a `TableSlice` with all rows that where `value` matches in the `column`.
@@ -120,7 +123,7 @@ pub trait TableOperations<'a, T: TableSlice<'a, T>> {
 }
 
 /// A `TableSlice` is a view into a `Table`.
-pub trait TableSlice<'a, T: TableSlice<'a, T>>: TableOperations<'a, T> {
+pub trait TableSlice<'a, R, RI, I, T>: TableOperations<'a, R, RI, I, T> where R: Row<'a, RI>, RI: Iterator<Item=&'a Value>, I: Iterator<Item=R>, T: TableSlice<'a, R, RI, I, T> {
     fn column_position(&self, column :&str) -> Result<usize, TableError> {
         if self.columns().iter().find(|c| c.as_str() == column).is_none() {
             let err_str = format!("Could not find column in slice: {}", column);
@@ -131,29 +134,41 @@ pub trait TableSlice<'a, T: TableSlice<'a, T>>: TableOperations<'a, T> {
     }
 }
 
+/// A view into a `Table` or `TableSlice` exposing an entire row.
+pub trait Row<'a, I: Iterator<Item=&'a Value>> {
+    fn new(columns :&Vec<String>, row :&Vec<&Value>) -> Self;
+    fn get(&self, column :&str) -> Value;
+    fn iter(&self) -> I;
+}
 
 // Row-oriented iterators
-pub struct RowIter<'a> {
-    iter: core::slice::Iter<'a, Vec<Value>>
-}
+//pub struct RowIter {
+//    cur_index: usize,
+//    len: usize,
+//    rows: Vec<Vec<Value>>
+//}
+//
+//impl <'a, R: Row> Iterator for RowIter {
+//    type Item = &'a R;
+//
+//    fn next(&mut self) -> Option<Self::Item> {
+//        if self.cur_index > self.len {
+//            None
+//        } else {
+//            Some(Row::new())
+//        }
+//    }
+//}
 
-impl <'a> Iterator for RowIter<'a> {
-    type Item = &'a Vec<Value>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-impl <'a> DoubleEndedIterator for RowIter<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back()
-    }
-}
-
-impl <'a> ExactSizeIterator for RowIter<'a> { }
-
-impl <'a> FusedIterator for RowIter<'a> { }
+//impl <'a> DoubleEndedIterator for RowIter<'a> {
+//    fn next_back(&mut self) -> Option<Self::Item> {
+//        self.iter.next_back()
+//    }
+//}
+//
+//impl <'a> ExactSizeIterator for RowIter<'a> { }
+//
+//impl <'a> FusedIterator for RowIter<'a> { }
 
 pub struct RowIntoIter(std::vec::IntoIter<Vec<Value>>);
 
