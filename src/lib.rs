@@ -132,9 +132,7 @@ pub trait TableSlice<'a, T: TableSlice<'a, T>>: TableOperations<'a, T> {
 }
 
 
-//
 // Row-oriented iterators
-//
 pub struct RowIter<'a> {
     iter: core::slice::Iter<'a, Vec<Value>>
 }

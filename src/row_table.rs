@@ -208,26 +208,75 @@ mod tests {
     use chrono::Duration;
 
     use crate::LOGGER_INIT;
-    use crate::row_table::RowTable;
+    use crate::row_table::{RowTable, RowTableSlice};
     use crate::{Table, TableOperations};
     use crate::value::Value;
     use ordered_float::OrderedFloat;
 
-//    #[test]
-//    fn from_csv() {
-//        LOGGER_INIT.call_once(|| simple_logger::init_with_level(Level::Debug).unwrap()); // this will panic on error
-//
-//        let path = Path::new("/export/stock_stuff/199x.csv");
-//
-//        let start = Instant::now();
-//        let table = RowTable::from_csv(path).expect("Error creating RowTable");
-//        let end = Instant::now();
-//
-//        println!("DONE: {}s", (end-start).as_secs());
-//    }
+    #[test]
+    fn to_from_csv() {
+        LOGGER_INIT.call_once(|| simple_logger::init_with_level(Level::Debug).unwrap()); // this will panic on error
+        let columns = ["A", "B", "C", "D"];
+        let mut t1:RowTable = Table::new(&columns);
+
+        for i in 0..10 {
+            let mut row = (0..t1.width()).map(|v| Value::Integer((v+i) as i64)).collect::<Vec<_>>();
+            t1.append_row(row);
+        }
+
+        assert_eq!(10, t1.len());
+        assert_eq!(columns.len(), t1.width());
+
+        let path = Path::new("/tmp/test.csv");
+        t1.to_csv(path).expect("Error writing CSV"); // write it out
+
+        let t2 :RowTable = Table::from_csv(path).expect("Error reading CSV");
+
+        assert_eq!(10, t2.len());
+        assert_eq!(columns.len(), t2.width());
+    }
+
+    #[test]
+    fn slice_to_from_csv() {
+        LOGGER_INIT.call_once(|| simple_logger::init_with_level(Level::Debug).unwrap()); // this will panic on error
+        let columns = ["A", "B", "C", "D"];
+        let mut t1:RowTable = Table::new(&columns);
+
+        for i in 0..10 {
+            let mut row = (0..t1.width()).map(|v| Value::Integer((v+i%2) as i64)).collect::<Vec<_>>();
+            t1.append_row(row);
+        }
+
+        assert_eq!(10, t1.len());
+        assert_eq!(columns.len(), t1.width());
+
+        // get a slice for writing
+        let groups = t1.group_by("A").expect("Error group_by");
+
+        for (v, slice) in groups.clone() {
+            let path_str = format!("/tmp/test_slice_{}.csv", String::from(v));
+            let path = Path::new(&path_str);
+
+            slice.to_csv(path).expect("Error writing CSV");
+        }
+
+        for (v, slice) in groups {
+            let path_str = format!("/tmp/test_slice_{}.csv", String::from(v));
+            let path = Path::new(&path_str);
+
+            let t :RowTable = Table::from_csv(path).expect("Error writing CSV");
+
+            let s = t.find("A", v).expect("Error getting slice");
+
+            assert_eq!(5, s.len());
+            assert_eq!(columns.len(), s.width());
+        }
+    }
 
     #[test]
     fn new_append() {
+        LOGGER_INIT.call_once(|| simple_logger::init_with_level(Level::Debug).unwrap()); // this will panic on error
+
         let mut t1 :RowTable = Table::new(&["A", "B"]);
         let mut t2 :RowTable = Table::new(&["A", "B"]);
 
@@ -242,6 +291,8 @@ mod tests {
 
     #[test]
     fn find() {
+        LOGGER_INIT.call_once(|| simple_logger::init_with_level(Level::Debug).unwrap()); // this will panic on error
+
         let mut t1 :RowTable = Table::new(&["A", "B"]);
 
         t1.append_row(vec![Value::new("1"), Value::new("2.3")]);
