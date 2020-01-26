@@ -102,7 +102,7 @@ pub trait TableOperations<'a, R, RI, I, T> where R: Row<'a, RI>, RI: Iterator<It
 
     fn group_by(&'a self, column :&str) -> Result<HashMap<&Value, T>, TableError>;
 
-    fn unique(&self, column :&str) -> Result<HashSet<Value>, TableError>  {
+    fn unique(&self, column :&str) -> Result<HashSet<&'a Value>, TableError>  {
         // get the position in the row we're concerned with
         let pos = self.column_position(column)?;
 
@@ -134,12 +134,35 @@ pub trait TableSlice<'a, R, RI, I, T>: TableOperations<'a, R, RI, I, T> where R:
     }
 }
 
+// playground: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=fbac8bab1dc26bc89edf35e6d62b3170
+
 /// A view into a `Table` or `TableSlice` exposing an entire row.
 pub trait Row<'a, I: Iterator<Item=&'a Value>> {
     fn new(columns :&Vec<String>, row :&Vec<&Value>) -> Self;
-    fn get(&self, column :&str) -> Value;
+    fn get(&self, column :&str) -> &'a Value;
+    fn get_index(&self, index :usize) -> &'a Value;
     fn iter(&self) -> I;
 }
+
+//pub struct RowIterator<'a, R: Row<'a, Self>> {
+//    cur_index: usize,
+//    max_index: usize,
+//    row: R
+//}
+//
+//impl <'a> Iterator for RowIterator<'a, Self> {
+//    type Item = &'a Value;
+//
+//    fn next(&mut self) -> Option<Self::Item> {
+//        if self.cur_index > self.max_index {
+//            None
+//        } else {
+//            let ret = self.row.get_index(self.cur_index);
+//            self.cur_index += 1;
+//            ret
+//        }
+//    }
+//}
 
 // Row-oriented iterators
 //pub struct RowIter {

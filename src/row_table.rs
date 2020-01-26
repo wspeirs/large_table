@@ -5,7 +5,7 @@ use std::io::{Error as IOError, ErrorKind};
 use csv::{Reader};
 use rayon::prelude::*;
 
-use crate::{Table, TableOperations, TableSlice, TableError, RowIter, RowIntoIter};
+use crate::{Table, TableOperations, TableSlice, TableError, Row, RowIntoIter};
 use crate::value::Value;
 use std::ops::Index;
 use std::collections::hash_map::RandomState;
@@ -26,7 +26,7 @@ pub struct RowTableSlice<'a> {
     table: &'a RowTable     // reference to the underlying table
 }
 
-impl <'a> Table<'a, RowTableSlice<'a>> for RowTable {
+impl <'a> Table<'a, RowTableRow, RowTableIter, RowTableSlice<'a>> for RowTable {
     /// Create a blank RowTable
     fn new(columns :&[&str]) -> Self {
         RowTable {
@@ -97,8 +97,8 @@ impl <'a> Table<'a, RowTableSlice<'a>> for RowTable {
 }
 
 impl <'a> TableOperations<'a, RowTableSlice<'a>> for RowTable {
-    fn iter(&self) -> RowIter {
-        RowIter{ iter: self.rows.iter() }
+    fn iter(&self) -> RowTableIter {
+        unimplemented!()
     }
 
     fn into_iter(self) -> RowIntoIter {
@@ -151,7 +151,7 @@ impl <'a> TableOperations<'a, RowTableSlice<'a>> for RowTable {
 }
 
 impl <'a> TableOperations<'a, RowTableSlice<'a>> for RowTableSlice<'a> {
-    fn iter(&self) -> RowIter {
+    fn iter(&self) -> RowTableIter {
         unimplemented!()
     }
 
@@ -197,6 +197,14 @@ impl IntoIterator for RowTable {
     }
 }
 
+
+struct RowTableIter { }
+
+struct RowTableRow { }
+
+impl <'a> Row<'a> for RowTableRow {
+
+}
 
 
 #[cfg(test)]
