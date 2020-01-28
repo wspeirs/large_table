@@ -7,6 +7,10 @@ use std::path::Path;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter, Error as FmtError};
+use std::hash::{Hash, Hasher};
+use std::cell::Ref;
+use std::iter::FusedIterator;
+use std::ops::Index;
 
 use rayon::prelude::*;
 
@@ -17,25 +21,16 @@ mod row_table;
 pub use crate::row_table::RowTable;
 pub use crate::value::Value;
 
+///
 /// The main interface into the mem_table library
+///
 pub trait Table {
-    /// Create a blank Table given the column names
-    fn new(columns :&[&str]) -> Self;
-
-    /// Read in a CSV file, and construct a Table
-    fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self, IOError>;
-
     fn iter(&self) -> RowIter;
     fn into_iter(self) -> RowIntoIter;
 //    fn row_mut_iter(&mut self) -> RowMutIter;
 
-    /// Return the list of column names
     fn columns(&self) -> &Vec<String>;
-
-    /// Returns the length (number of rows) of the Table.
     fn len(&self) -> usize;
-
-    /// Returns the width (length of column list) of the Table.
     fn width(&self) -> usize;
 
     // iterators that only return some of the columns
@@ -160,11 +155,5 @@ impl TableError {
 #[cfg(test)] extern crate simple_logger;
 #[cfg(test)] extern crate rand;
 #[cfg(test)] use std::sync::{Once};
-use std::hash::{Hash, Hasher};
-use std::cell::Ref;
-use rayon::iter::ParallelExtend;
-use rayon::prelude::IntoParallelIterator;
-use std::cmp::Ordering;
-
 #[cfg(test)] static LOGGER_INIT: Once = Once::new();
 
