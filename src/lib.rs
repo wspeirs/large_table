@@ -23,13 +23,13 @@ mod row_table;
 //pub use crate::row_table::RowTable;
 pub use crate::value::Value;
 use crate::table_error::TableError;
-use crate::row::{OwnedRow, RefRow, MutRefRow};
+use crate::row::{Row, OwnedRow, RefRow, MutRefRow};
 
 // Playground: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=98ca951a70269d44cb48230359857f60
 
 /// The main interface into the mem_table library
 pub trait Table<'a>: TableOperations<'a> {
-    type MutIter: Iterator;
+    type MutIter: Iterator<Item=MutRefRow<'a>>;
 
     /// Create a blank RowTable
     fn new(columns :&[&str]) -> Self;
@@ -69,8 +69,8 @@ pub trait Table<'a>: TableOperations<'a> {
 /// Operations that can be performed on `Table`s or `TableSlice`s.
 pub trait TableOperations<'a> {
     type TableSliceType: TableSlice<'a>;
-    type IntoIter: Iterator;
-    type Iter: Iterator;
+    type IntoIter: Iterator<Item=OwnedRow>;
+    type Iter: Iterator<Item=RefRow<'a>>;
 
     fn into_iter(self) -> Self::IntoIter;
     fn iter(&'a self) -> Self::Iter;
@@ -112,15 +112,13 @@ pub trait TableOperations<'a> {
 
     fn group_by(&'a self, column :&str) -> Result<HashMap<&Value, Self::TableSliceType>, TableError>;
 
-    fn unique(&'a self, column :&str) -> Result<HashSet<&'a Value>, TableError>  {
+    fn unique(&'a self, column :&str) -> Result<HashSet<Value>, TableError>  {
         // get the position in the row we're concerned with
         let pos = self.column_position(column)?;
 
         // insert the values into the HashSet
         // TODO: use Rayon to make this go in parallel
-//        Ok(self.iter().map(|row| row.at(pos).unwrap()).collect::<HashSet<_>>())
-
-        unimplemented!()
+        Ok(self.iter().map(|row| row.at(pos).unwrap()).collect::<HashSet<_>>())
     }
 
     /// Returns a `TableSlice` with all rows that where `value` matches in the `column`.
