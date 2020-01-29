@@ -29,8 +29,12 @@ use crate::row::{OwnedRow, RefRow, MutRefRow};
 
 /// The main interface into the mem_table library
 pub trait Table<'a>: TableOperations<'a> {
+    type MutIter: Iterator;
+
     /// Create a blank RowTable
     fn new(columns :&[&str]) -> Self;
+
+    fn iter_mut(&'a mut self) -> Self::MutIter;
 
     /// Read in a CSV file, and construct a RowTable
     fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self, IOError> where Self: Sized;
@@ -67,11 +71,9 @@ pub trait TableOperations<'a> {
     type TableSliceType: TableSlice<'a>;
     type IntoIter: Iterator;
     type Iter: Iterator;
-    type MutIter: Iterator;
 
     fn into_iter(self) -> Self::IntoIter;
     fn iter(&'a self) -> Self::Iter;
-    fn iter_mut(&'a mut self) -> Self::MutIter;
 
     fn columns(&self) -> &Vec<String>;
 

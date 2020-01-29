@@ -12,6 +12,8 @@ use rayon::prelude::*;
 
 use crate::{Table, TableOperations, TableSlice, TableError, OwnedRow, RefRow, MutRefRow};
 use crate::value::Value;
+use chrono::format::Item::OwnedSpace;
+use std::borrow::Borrow;
 
 /// A table with row-oriented data
 #[derive(Debug, Clone)]
@@ -21,12 +23,18 @@ pub struct RowTable {
 }
 
 impl <'a> Table<'a> for RowTable {
+    type MutIter = RowTableMutIter<'a>;
+
     /// Create a blank RowTable
     fn new(columns :&[&str]) -> Self {
         RowTable {
             columns: columns.into_iter().map(|s| String::from(*s)).collect::<Vec<_>>(),
             rows: Vec::new()
         }
+    }
+
+    fn iter_mut(&'a mut self) -> Self::MutIter {
+        self.into_iter()
     }
 
     /// Read in a CSV file, and construct a RowTable
@@ -101,7 +109,7 @@ impl <'a> TableOperations<'a> for RowTable {
     type TableSliceType = RowTableSlice<'a>;
     type IntoIter = RowTableIntoIter;
     type Iter = RowTableIter<'a>;
-    type MutIter = RowTableMutIter<'a>;
+//    type MutIter = RowTableMutIter<'a>;
 
     fn into_iter(self) -> RowTableIntoIter {
         RowTableIntoIter{ columns: Rc::new(self.columns), iter: self.rows.into_iter() }
@@ -111,9 +119,9 @@ impl <'a> TableOperations<'a> for RowTable {
         self.into_iter()
     }
 
-    fn iter_mut(&'a mut self) -> RowTableMutIter<'a> {
-        self.into_iter()
-    }
+//    fn iter_mut(&'a mut self) -> RowTableMutIter<'a> {
+//        self.into_iter()
+//    }
 
     #[inline]
     fn columns(&self) -> &Vec<String> {
@@ -159,60 +167,6 @@ impl <'a> TableOperations<'a> for RowTable {
         })
     }
 }
-
-#[derive(Debug, Clone)]
-pub struct RowTableSlice<'a> {
-    columns: Vec<String>,   // the columns in this slice's view
-    rows: Vec<usize>,       // index of the corresponding row in the Table
-    table: &'a RowTable     // reference to the underlying table
-}
-
-impl <'a> TableOperations<'a> for RowTableSlice<'a> {
-    type TableSliceType = RowTableSlice<'a>;
-    type IntoIter = RowTableIntoIter;
-    type Iter = RowTableIter<'a>;
-    type MutIter = RowTableMutIter<'a>;
-
-    fn into_iter(self) -> RowTableIntoIter {
-        unimplemented!()
-    }
-
-    fn iter(&self) -> RowTableIter<'a> {
-        unimplemented!()
-    }
-
-    fn iter_mut(&mut self) -> RowTableMutIter<'a> {
-        unimplemented!()
-    }
-
-    #[inline]
-    fn columns(&self) -> &Vec<String> {
-        &self.columns
-    }
-
-    fn group_by(&'a self, column: &str) -> Result<HashMap<&Value, RowTableSlice<'a>>, TableError> {
-        unimplemented!();
-    }
-
-    fn find_by<P: FnMut(&Vec<Value>) -> bool>(&'a self, mut predicate: P) -> Result<RowTableSlice<'a>, TableError> {
-        let mut slice_rows = Vec::new();
-
-        for &row_index in self.rows.iter() {
-            // run the predicate against the row
-            if predicate(&self.table.rows[row_index]) {
-                slice_rows.push(row_index);
-            }
-        }
-
-        Ok(RowTableSlice {
-            columns: self.columns.clone(),
-            rows: slice_rows,
-            table: self.table
-        })
-    }
-}
-
-impl <'a> TableSlice<'a> for RowTableSlice<'a> { }
 
 //
 // 3 types of Iterators for RowTable: into, reference, and mutable reference
@@ -300,6 +254,164 @@ impl <'a> IntoIterator for &'a mut RowTable {
         RowTableMutIter{ columns: &self.columns, iter: self.rows.iter_mut() }
     }
 }
+
+
+#[derive(Debug, Clone)]
+pub struct RowTableSlice<'a> {
+    columns: Vec<String>,   // the columns in this slice's view
+    rows: Vec<usize>,       // index of the corresponding row in the Table
+    table: &'a RowTable     // reference to the underlying table
+}
+
+impl <'a> TableOperations<'a> for RowTableSlice<'a> {
+    type TableSliceType = RowTableSlice<'a>;
+    type IntoIter = RowTableSliceIntoIter<'a>;
+    type Iter = RowTableSliceIter<'a>;
+//    type MutIter = RowTableSliceMutIter<'a>;
+
+    fn into_iter(self) -> RowTableSliceIntoIter<'a> {
+        unimplemented!()
+    }
+
+    fn iter(&self) -> RowTableSliceIter<'a> {
+        unimplemented!()
+    }
+
+//    fn iter_mut(&mut self) -> RowTableSliceMutIter<'a> {
+//        unimplemented!()
+//    }
+
+    #[inline]
+    fn columns(&self) -> &Vec<String> {
+        &self.columns
+    }
+
+    fn group_by(&'a self, column: &str) -> Result<HashMap<&Value, RowTableSlice<'a>>, TableError> {
+        unimplemented!();
+    }
+
+    fn find_by<P: FnMut(&Vec<Value>) -> bool>(&'a self, mut predicate: P) -> Result<RowTableSlice<'a>, TableError> {
+        let mut slice_rows = Vec::new();
+
+        for &row_index in self.rows.iter() {
+            // run the predicate against the row
+            if predicate(&self.table.rows[row_index]) {
+                slice_rows.push(row_index);
+            }
+        }
+
+        Ok(RowTableSlice {
+            columns: self.columns.clone(),
+            rows: slice_rows,
+            table: self.table
+        })
+    }
+}
+
+impl <'a> TableSlice<'a> for RowTableSlice<'a> { }
+
+//
+// 3 types of Iterators for RowTableSlice: into, reference, and mutable reference
+//
+
+/// Consuming `Iterator` for rows in the table.
+pub struct RowTableSliceIntoIter<'a> {
+    slice: RowTableSlice<'a>,
+    columns: Rc<Vec<String>>,
+    cur_pos: usize
+}
+
+impl <'a> Iterator for RowTableSliceIntoIter<'a> {
+    type Item=OwnedRow;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cur_pos > self.slice.rows.len() {
+            None
+        } else {
+            let row_index = self.slice.rows[self.cur_pos];
+            let row_vec = self.slice.table.rows[row_index].clone();
+            self.cur_pos += 1;
+
+            Some(OwnedRow{ columns: self.columns.clone(), row: row_vec})
+        }
+    }
+}
+
+/// Reference `Iterator` for rows in a table.
+pub struct RowTableSliceIter<'a> {
+    slice: RowTableSlice<'a>,
+    columns: &'a Vec<String>,
+    cur_pos: usize
+}
+
+impl <'a> Iterator for RowTableSliceIter<'a> {
+    type Item= RefRow<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cur_pos > self.slice.rows.len() {
+            None
+        } else {
+            let row_index = self.slice.rows[self.cur_pos];
+            let row_vec = self.slice.table.rows[row_index].as_ref();
+            self.cur_pos += 1;
+
+            Some(RefRow{ columns: self.columns, row: row_vec})
+        }
+    }
+
+}
+
+///// Mutable reference `Iterator` for rows in a table.
+//pub struct RowTableSliceMutIter<'a> {
+//    slice: RowTableSlice<'a>,
+//    columns: &'a Vec<String>,
+//    cur_pos: usize
+//}
+//
+//impl <'a> Iterator for RowTableSliceMutIter<'a> {
+//    type Item= MutRefRow<'a>;
+//
+//    fn next(&mut self) -> Option<Self::Item> {
+//        if self.cur_pos > self.slice.rows.len() {
+//            None
+//        } else {
+//            let row_index = self.slice.rows[self.cur_pos];
+//            let mut row_vec = &self.slice.table.rows[row_index];
+//            self.cur_pos += 1;
+//
+//            Some(MutRefRow{ columns: self.columns, row: &mut row_vec})
+//        }
+//    }
+//}
+
+//impl IntoIterator for RowTableSlice {
+//    type Item=OwnedRow;
+//    type IntoIter=RowTableIntoIter;
+//
+//    fn into_iter(self) -> Self::IntoIter {
+//        let a :() = self.table.rows.into_iter().enumerate();
+//
+//        RowTableSliceIntoIter{ columns: Rc::new(self.columns), iter: self.rows.into_iter() }
+//    }
+//}
+//
+//impl <'a> IntoIterator for &'a RowTableSlice {
+//    type Item= RefRow<'a>;
+//    type IntoIter=RowTableIter<'a>;
+//
+//    fn into_iter(self) -> Self::IntoIter {
+//        RowTableSliceIter{ columns: &self.columns, iter: self.rows.iter() }
+//    }
+//}
+//
+//impl <'a> IntoIterator for &'a mut RowTableSlice {
+//    type Item= MutRefRow<'a>;
+//    type IntoIter=RowTableMutIter<'a>;
+//
+//    fn into_iter(self) -> Self::IntoIter {
+//        RowTableSliceMutIter{ columns: &self.columns, iter: self.rows.iter_mut() }
+//    }
+//}
 
 //
 //#[cfg(test)]
