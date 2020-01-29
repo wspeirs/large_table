@@ -23,7 +23,7 @@ mod row_table;
 //pub use crate::row_table::RowTable;
 pub use crate::value::Value;
 use crate::table_error::TableError;
-use crate::row::{Row, RowIntoIter, OwnedRow};
+use crate::row::{Row, RowIntoIter};
 
 // Playground: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=98ca951a70269d44cb48230359857f60
 
@@ -68,7 +68,7 @@ pub trait TableOperations<'a> {
 //    type RowIteratorType: Iterator<Item=&'a Row>;
 
     fn iter(&self) -> Box<dyn Iterator<Item=Row>>;
-    fn into_iter(self) -> Box<dyn Iterator<Item=OwnedRow>>;
+    fn into_iter(self) -> Box<dyn Iterator<Item=Row<'a>>>;
 //    fn row_mut_iter(&mut self) -> RowMutIter;
 
     fn columns(&self) -> &Vec<String>;

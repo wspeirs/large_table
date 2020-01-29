@@ -1,17 +1,17 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::io::{Error as IOError, ErrorKind};
+use std::ops::Index;
+use std::collections::hash_map::RandomState;
+use std::iter::Map;
+use std::rc::Rc;
+
 
 use csv::{Reader};
 use rayon::prelude::*;
 
 use crate::{Table, TableOperations, TableSlice, TableError, Row, RowIntoIter};
 use crate::value::Value;
-use std::ops::Index;
-use std::collections::hash_map::RandomState;
-use std::iter::Map;
-use std::borrow::Borrow;
-use crate::row::OwnedRow;
 
 ///
 /// A table with row-oriented data
@@ -22,28 +22,27 @@ pub struct RowTable {
     rows: Vec<Vec<Value>>
 }
 
-struct RowTableIntoIter {
-    table: RowTable,
-    cur_index: usize
+struct RowTableIter<'a> {
+    columns: &'a Vec<String>,
+    iter: std::vec::IntoIter<Vec<Value>>
 }
 
-// TODO: optimize this
-impl Iterator for RowTableIntoIter {
-    type Item = OwnedRow;
+impl <'a> Iterator for RowTableIter<'a> {
+    type Item = Row<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.cur_index > self.table.rows.len() {
-            None
-        } else {
-            let row = self.table.rows[self.cur_index].iter().cloned().collect::<Vec<_>>();
+        let next = self.iter.next();
 
-            let ret = OwnedRow {
-                columns: self.table.columns().clone(),
-                values: row
-            };
-            self.cur_index += 1;
-            Some(ret)
+        if next.is_none() {
+            return None;
         }
+
+//        Some(Row::new(&self.columns, next.unwrap()).unwrap())
+
+        Some(Row {
+            columns: &self.columns,
+            values: next.unwrap()
+        })
     }
 }
 
@@ -129,6 +128,7 @@ impl <'a> TableOperations<'a> for RowTable {
 
     fn iter(&self) -> Box<dyn Iterator<Item=Row>> {
         unimplemented!()
+//        let i = self.rows.iter();
 //        let iter = self.rows.iter().map(|v|
 //            Row::new(self.columns(), v).expect("Column/row length mis-match")
 //        );
@@ -136,8 +136,8 @@ impl <'a> TableOperations<'a> for RowTable {
 //        Box::new(iter)
     }
 
-    fn into_iter(self) -> Box<dyn Iterator<Item=OwnedRow>> {
-        Box::new(RowTableIntoIter { table: self, cur_index: 0 })
+    fn into_iter(self) -> Box<dyn Iterator<Item=Row<'a>>> {
+        Box::new(RowTableIter { columns: &self.columns, iter: self.rows.into_iter() })
     }
 
     #[inline]
@@ -199,7 +199,7 @@ impl <'a> TableOperations<'a> for RowTableSlice<'a> {
         unimplemented!()
     }
 
-    fn into_iter(self) -> Box<dyn Iterator<Item=OwnedRow>> {
+    fn into_iter(self) -> Box<dyn Iterator<Item=Row<'a>>> {
         unimplemented!()
     }
 

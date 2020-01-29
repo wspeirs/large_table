@@ -1,29 +1,27 @@
+use std::rc::Rc;
+
 use crate::value::Value;
 use crate::table_error::TableError;
 
-// playground: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=fbac8bab1dc26bc89edf35e6d62b3170
 
-pub struct OwnedRow {
-    pub(crate) columns: Vec<String>,
-    pub(crate) values: Vec<Value>
-}
+// playground: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=fbac8bab1dc26bc89edf35e6d62b3170
 
 /// A row in a `Table` or `TableSlice`.
 pub struct Row<'a> {
     columns: &'a Vec<String>,
-    values: Vec<&'a Value>
+    values: Vec<Value>
 }
 
 impl <'a> Row<'a> {
     /// Create a new Row given a list of columns and the list of values.
-    pub fn new(columns :&'a Vec<String>, row :Vec<&'a Value>) -> Result<Row<'a>, TableError> {
-        if columns.len() != row.len() {
-            let err_str = format!("Length of columns does not match length of row: {} != {}", columns.len(), row.len());
-            Err(TableError::new(err_str.as_str()))
-        } else {
-            Ok(Row { columns, values: row })
-        }
-    }
+//    pub fn new(columns :&'a Vec<String>, row :&'a Vec<Value>) -> Result<Row<'a>, TableError> {
+//        if columns.len() != row.len() {
+//            let err_str = format!("Length of columns does not match length of row: {} != {}", columns.len(), row.len());
+//            Err(TableError::new(err_str.as_str()))
+//        } else {
+//            Ok(Row { columns, values: row })
+//        }
+//    }
 
     /// Return the contents of a cell by column name.
     pub fn get(&'a self, column :&str) -> Result<&'a Value, TableError> {
@@ -39,7 +37,7 @@ impl <'a> Row<'a> {
     }
 
     /// Return the contents of a cell by column index.
-    pub fn at(&self, index :usize) -> Result<&'a Value, TableError> {
+    pub fn at(&'a self, index :usize) -> Result<&'a Value, TableError> {
         if index >= self.values.len() {
             let err_str = format!("Index {} is greater than row width {}", index, self.values.len());
             Err(TableError::new(err_str.as_str()))
