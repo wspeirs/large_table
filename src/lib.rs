@@ -104,7 +104,7 @@ pub trait TableOperations<'a> {
 
         // go through each row, writing the records converted to Strings
         for row in self.iter() {
-//            csv.write_record(row.iter().map(|f| String::from(f)));
+            csv.write_record(row.iter().map(|f| String::from(f)));
         }
 
         Ok( () )
