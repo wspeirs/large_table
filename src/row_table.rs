@@ -358,7 +358,6 @@ impl <'a> Iterator for RowTableSliceIter<'a> {
             Some(RefRow{ columns: self.columns, row: row_vec})
         }
     }
-
 }
 
 ///// Mutable reference `Iterator` for rows in a table.
