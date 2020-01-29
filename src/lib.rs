@@ -10,6 +10,7 @@ use std::hash::{Hash, Hasher};
 use std::cell::Ref;
 use std::iter::FusedIterator;
 use std::ops::Index;
+use std::cmp::Ordering;
 
 use rayon::prelude::*;
 use csv::{Reader, Writer};
@@ -130,6 +131,33 @@ pub trait TableOperations<'a> {
     }
 
     fn find_by<P: FnMut(&Vec<Value>) -> bool>(&'a self, predicate :P) -> Result<Self::TableSliceType, TableError>;
+
+    /// Sorts the rows in the table, in an unstable way, in ascending order, by the columns provided, in the order they're provided.
+    ///
+    /// If the columns passed are `A`, `B`, `C`, then the rows will be sored by column `A` first, then `B`, then `C`.
+    fn sort(&mut self, columns :&[&str]) -> Result<(), TableError> {
+        Ok(self.sort_by(columns, |a, b| a.cmp(b)))
+    }
+
+    /// Sorts the rows in the table, in an unstable way, in ascending order, by the columns provided, in the order they're provided, using the `compare` function to compare values.
+    ///
+    /// If the columns passed are `A`, `B`, `C`, then the rows will be sored by column `A` first, then `B`, then `C`.
+    fn sort_by<F: FnMut(&Vec<Value>, &Vec<Value>) -> Ordering>(&mut self, columns :&[&str], compare :F);
+
+    /// Performs an ascending stable sort on the rows in the table, by the columns provided, in the order they're provided.
+    ///
+    /// If the columns passed are `A`, `B`, `C`, then the rows will be sored by column `A` first, then `B`, then `C`.
+    fn stable_sort(&mut self, columns :&[&str]) -> Result<(), TableError> {
+        self.stable_sort_by(columns, |a, b| a.cmp(b))
+    }
+
+    /// Performs an ascending stable sort on the rows in the table, by the columns provided, in the order they're provided, using the `compare` function to compare values.
+    ///
+    /// If the columns passed are `A`, `B`, `C`, then the rows will be sored by column `A` first, then `B`, then `C`.
+    fn stable_sort_by<F: FnMut(&Vec<Value>, &Vec<Value>) -> Ordering>(&mut self, columns :&[&str], compare :F) -> Result<(), TableError>;
+
+    fn split_rows_at(&'a self, mid :usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError>;
+
 }
 
 /// A `TableSlice` is a view into a `Table`.
@@ -149,5 +177,6 @@ pub trait TableSlice<'a>: TableOperations<'a> {
 #[cfg(test)] extern crate simple_logger;
 #[cfg(test)] extern crate rand;
 #[cfg(test)] use std::sync::{Once};
+
 #[cfg(test)] static LOGGER_INIT: Once = Once::new();
 

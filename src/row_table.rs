@@ -14,6 +14,7 @@ use crate::{Table, TableOperations, TableSlice, TableError, OwnedRow, RefRow, Mu
 use crate::value::Value;
 use chrono::format::Item::OwnedSpace;
 use std::borrow::Borrow;
+use std::cmp::Ordering;
 
 /// A table with row-oriented data
 #[derive(Debug, Clone)]
@@ -109,7 +110,6 @@ impl <'a> TableOperations<'a> for RowTable {
     type TableSliceType = RowTableSlice<'a>;
     type IntoIter = RowTableIntoIter;
     type Iter = RowTableIter<'a>;
-//    type MutIter = RowTableMutIter<'a>;
 
     fn into_iter(self) -> RowTableIntoIter {
         RowTableIntoIter{ columns: Rc::new(self.columns), iter: self.rows.into_iter() }
@@ -118,10 +118,6 @@ impl <'a> TableOperations<'a> for RowTable {
     fn iter(&'a self) -> RowTableIter<'a> {
         self.into_iter()
     }
-
-//    fn iter_mut(&'a mut self) -> RowTableMutIter<'a> {
-//        self.into_iter()
-//    }
 
     #[inline]
     fn columns(&self) -> &Vec<String> {
@@ -165,6 +161,27 @@ impl <'a> TableOperations<'a> for RowTable {
             rows: slice_rows,
             table: self
         })
+    }
+
+    fn sort_by<F: FnMut(&Vec<Value>, &Vec<Value>) -> Ordering>(&mut self, columns: &[&str], compare: F) {
+        unimplemented!()
+    }
+
+    fn stable_sort_by<F: FnMut(&Vec<Value>, &Vec<Value>) -> Ordering>(&mut self, columns :&[&str], compare: F) -> Result<(), TableError> {
+        unimplemented!()
+    }
+
+    fn split_rows_at(&'a self, mid: usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError> {
+        if mid >= self.rows.len() {
+            let err_str = format!("Midpoint too large: {} >= {}", mid, self.rows.len());
+            return Err(TableError::new(err_str.as_str()));
+        }
+
+        Ok( (
+            RowTableSlice { columns: self.columns.clone(), rows: (0..mid).collect::<Vec<_>>(), table: &self},
+            RowTableSlice { columns: self.columns.clone(), rows: (mid..self.rows.len()).collect::<Vec<_>>(), table: &self}
+            )
+        )
     }
 }
 
@@ -267,7 +284,6 @@ impl <'a> TableOperations<'a> for RowTableSlice<'a> {
     type TableSliceType = RowTableSlice<'a>;
     type IntoIter = RowTableSliceIntoIter<'a>;
     type Iter = RowTableSliceIter<'a>;
-//    type MutIter = RowTableSliceMutIter<'a>;
 
     fn into_iter(self) -> RowTableSliceIntoIter<'a> {
         let cols = Rc::new(self.columns.clone());
@@ -304,6 +320,27 @@ impl <'a> TableOperations<'a> for RowTableSlice<'a> {
             rows: slice_rows,
             table: self.table
         })
+    }
+
+    fn sort_by<F: FnMut(&Vec<Value>, &Vec<Value>) -> Ordering>(&mut self, columns: &[&str], compare: F) {
+        unimplemented!()
+    }
+
+    fn stable_sort_by<F: FnMut(&Vec<Value>, &Vec<Value>) -> Ordering>(&mut self, columns :&[&str], compare: F) -> Result<(), TableError> {
+        unimplemented!()
+    }
+
+    fn split_rows_at(&self, mid: usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError> {
+        if mid >= self.rows.len() {
+            let err_str = format!("Midpoint too large: {} >= {}", mid, self.rows.len());
+            return Err(TableError::new(err_str.as_str()));
+        }
+
+        Ok( (
+            RowTableSlice { columns: self.columns.clone(), rows: (0..mid).collect::<Vec<_>>(), table: &self.table},
+            RowTableSlice { columns: self.columns.clone(), rows: (mid..self.rows.len()).collect::<Vec<_>>(), table: &self.table}
+            )
+        )
     }
 }
 
