@@ -23,7 +23,7 @@ mod row_table;
 //pub use crate::row_table::RowTable;
 pub use crate::value::Value;
 use crate::table_error::TableError;
-use crate::row::{Row, RowIntoIter};
+use crate::row::{OwnedRow, BorrowedRow};
 
 // Playground: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=98ca951a70269d44cb48230359857f60
 
@@ -43,13 +43,13 @@ pub trait Table<'a>: TableOperations<'a> {
         }
 
         for row in table.into_iter() {
-//            self.append_row(row);
+            self.append_row(row);
         }
 
         Ok( () )
     }
 
-    fn append_row(&mut self, row :Row) -> Result<(), TableError>;
+    fn append_row<R>(&mut self, row :R) -> Result<(), TableError>;
 
     /// Adds a column with `column_name` to the end of the table filling in all rows with `value`.
     /// This method works in parallel and is therefore usually faster than `add_column_with`
@@ -65,11 +65,13 @@ pub trait Table<'a>: TableOperations<'a> {
 /// Operations that can be performed on `Table`s or `TableSlice`s.
 pub trait TableOperations<'a> {
     type TableSliceType: TableSlice<'a>;
-//    type RowIteratorType: Iterator<Item=&'a Row>;
+    type IntoIter: Iterator;
+    type Iter: Iterator;
+    type MutIter: Iterator;
 
-    fn iter(&self) -> Box<dyn Iterator<Item=Row>>;
-    fn into_iter(self) -> Box<dyn Iterator<Item=Row<'a>>>;
-//    fn row_mut_iter(&mut self) -> RowMutIter;
+    fn into_iter(self) -> Self::IntoIter;
+    fn iter(&'a self) -> Self::Iter;
+    fn iter_mut(&'a mut self) -> Self::MutIter;
 
     fn columns(&self) -> &Vec<String>;
 
@@ -100,7 +102,7 @@ pub trait TableOperations<'a> {
 
         // go through each row, writing the records converted to Strings
         for row in self.iter() {
-            csv.write_record(row.iter().map(|f| String::from(f)));
+//            csv.write_record(row.iter().map(|f| String::from(f)));
         }
 
         Ok( () )
@@ -114,7 +116,9 @@ pub trait TableOperations<'a> {
 
         // insert the values into the HashSet
         // TODO: use Rayon to make this go in parallel
-        Ok(self.iter().map(|row| row.at(pos).unwrap()).collect::<HashSet<_>>())
+//        Ok(self.iter().map(|row| row.at(pos).unwrap()).collect::<HashSet<_>>())
+
+        unimplemented!()
     }
 
     /// Returns a `TableSlice` with all rows that where `value` matches in the `column`.

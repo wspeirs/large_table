@@ -10,40 +10,14 @@ use std::rc::Rc;
 use csv::{Reader};
 use rayon::prelude::*;
 
-use crate::{Table, TableOperations, TableSlice, TableError, Row, RowIntoIter};
+use crate::{Table, TableOperations, TableSlice, TableError, OwnedRow, BorrowedRow};
 use crate::value::Value;
 
-///
 /// A table with row-oriented data
-///
 #[derive(Debug, Clone)]
 pub struct RowTable {
     columns: Vec<String>,
     rows: Vec<Vec<Value>>
-}
-
-struct RowTableIter<'a> {
-    columns: &'a Vec<String>,
-    iter: std::vec::IntoIter<Vec<Value>>
-}
-
-impl <'a> Iterator for RowTableIter<'a> {
-    type Item = Row<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let next = self.iter.next();
-
-        if next.is_none() {
-            return None;
-        }
-
-//        Some(Row::new(&self.columns, next.unwrap()).unwrap())
-
-        Some(Row {
-            columns: &self.columns,
-            values: next.unwrap()
-        })
-    }
 }
 
 impl <'a> Table<'a> for RowTable {
@@ -92,17 +66,18 @@ impl <'a> Table<'a> for RowTable {
         })
     }
 
-    fn append_row(&mut self, row: Row) -> Result<(), TableError> {
+    fn append_row<R>(&mut self, row: R) -> Result<(), TableError> {
         // make sure the rows are the same width
-        if self.width() != row.width() {
-            let err_str = format!("Row width doesn't match table width: {} != {}", row.width(), self.width());
-            return Err(TableError::new(err_str.as_str()));
-        }
-
-        // convert to a Vec
-        let row_vec = row.iter().cloned().collect::<Vec<_>>();
-
-        Ok(self.rows.push(row_vec))
+//        if self.width() != row.width() {
+//            let err_str = format!("Row width doesn't match table width: {} != {}", row.width(), self.width());
+//            return Err(TableError::new(err_str.as_str()));
+//        }
+//
+//        // convert to a Vec
+//        let row_vec = row.iter().cloned().collect::<Vec<_>>();
+//
+//        Ok(self.rows.push(row_vec))
+        unimplemented!()
     }
 
     fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, mut f :F) -> Result<(), TableError> {
@@ -124,20 +99,20 @@ impl <'a> Table<'a> for RowTable {
 
 impl <'a> TableOperations<'a> for RowTable {
     type TableSliceType = RowTableSlice<'a>;
-//    type RowIteratorType = Map<Iterator<Item=&'a Row>, FnMut<&'a Vec<_>>>;
+    type IntoIter = RowTableIntoIter;
+    type Iter = RowTableIter<'a>;
+    type MutIter = RowTableMutIter<'a>;
 
-    fn iter(&self) -> Box<dyn Iterator<Item=Row>> {
-        unimplemented!()
-//        let i = self.rows.iter();
-//        let iter = self.rows.iter().map(|v|
-//            Row::new(self.columns(), v).expect("Column/row length mis-match")
-//        );
-//
-//        Box::new(iter)
+    fn into_iter(self) -> RowTableIntoIter {
+        RowTableIntoIter{ columns: Rc::new(self.columns), iter: self.rows.into_iter() }
     }
 
-    fn into_iter(self) -> Box<dyn Iterator<Item=Row<'a>>> {
-        Box::new(RowTableIter { columns: &self.columns, iter: self.rows.into_iter() })
+    fn iter(&'a self) -> RowTableIter<'a> {
+        self.into_iter()
+    }
+
+    fn iter_mut(&'a mut self) -> RowTableMutIter<'a> {
+        self.into_iter()
     }
 
     #[inline]
@@ -194,12 +169,19 @@ pub struct RowTableSlice<'a> {
 
 impl <'a> TableOperations<'a> for RowTableSlice<'a> {
     type TableSliceType = RowTableSlice<'a>;
+    type IntoIter = RowTableIntoIter;
+    type Iter = RowTableIter<'a>;
+    type MutIter = RowTableMutIter<'a>;
 
-    fn iter(&self) -> Box<dyn Iterator<Item=Row>> {
+    fn into_iter(self) -> RowTableIntoIter {
         unimplemented!()
     }
 
-    fn into_iter(self) -> Box<dyn Iterator<Item=Row<'a>>> {
+    fn iter(&self) -> RowTableIter<'a> {
+        unimplemented!()
+    }
+
+    fn iter_mut(&mut self) -> RowTableMutIter<'a> {
         unimplemented!()
     }
 
@@ -232,15 +214,92 @@ impl <'a> TableOperations<'a> for RowTableSlice<'a> {
 
 impl <'a> TableSlice<'a> for RowTableSlice<'a> { }
 
-//impl IntoIterator for RowTable {
-//    type Item = Vec<Value>;
-//    type IntoIter = RowIntoIter;
 //
-//    fn into_iter(self) -> Self::IntoIter {
-//        RowIntoIter(self.rows.into_iter())
-//    }
-//}
+// 3 types of Iterators for RowTable: into, reference, and mutable reference
+//
 
+/// Consuming `Iterator` for rows in the table.
+pub struct RowTableIntoIter {
+    columns: Rc<Vec<String>>,
+    iter: std::vec::IntoIter<Vec<Value>>
+}
+
+impl Iterator for RowTableIntoIter {
+    type Item=OwnedRow;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(row) = self.iter.next() {
+            // self.columns.clone is cheap because it's an Rc
+            Some(OwnedRow{ columns: self.columns.clone(), row })
+        } else {
+            None
+        }
+    }
+}
+
+/// Reference `Iterator` for rows in a table.
+pub struct RowTableIter<'a> {
+    columns: &'a Vec<String>,
+    iter: std::slice::Iter<'a, Vec<Value>>
+}
+
+impl <'a> Iterator for RowTableIter<'a> {
+    type Item=BorrowedRow<'a, &'a Vec<Value>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(row) = self.iter.next() {
+            Some(BorrowedRow{ columns: &self.columns, row })
+        } else {
+            None
+        }
+    }
+
+}
+
+/// Mutable reference `Iterator` for rows in a table.
+pub struct RowTableMutIter<'a> {
+    columns: &'a Vec<String>,
+    iter: std::slice::IterMut<'a, Vec<Value>>
+}
+
+impl <'a> Iterator for RowTableMutIter<'a> {
+    type Item=BorrowedRow<'a, &'a mut Vec<Value>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(row) = self.iter.next() {
+            Some(BorrowedRow{ columns: &self.columns, row })
+        } else {
+            None
+        }
+    }
+}
+
+impl IntoIterator for RowTable {
+    type Item=OwnedRow;
+    type IntoIter=RowTableIntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        RowTableIntoIter{ columns: Rc::new(self.columns), iter: self.rows.into_iter() }
+    }
+}
+
+impl <'a> IntoIterator for &'a RowTable {
+    type Item=BorrowedRow<'a, &'a Vec<Value>>;
+    type IntoIter=RowTableIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        RowTableIter{ columns: &self.columns, iter: self.rows.iter() }
+    }
+}
+
+impl <'a> IntoIterator for &'a mut RowTable {
+    type Item=BorrowedRow<'a, &'a mut Vec<Value>>;
+    type IntoIter=RowTableMutIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        RowTableMutIter{ columns: &self.columns, iter: self.rows.iter_mut() }
+    }
+}
 
 //
 //#[cfg(test)]
