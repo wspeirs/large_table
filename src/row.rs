@@ -9,11 +9,18 @@ use crate::table_error::TableError;
 // playground for Row & Iterators: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=5b1ead8cdf0cbaac2941ec9e15a942d5
 
 
-/// A row with borrowed values for a `Table` or `TableSlice`.
+/// A row with ref values for a `Table` or `TableSlice`.
 #[derive(Debug)]
-pub struct BorrowedRow<'a, T: 'a> {
+pub struct RefRow<'a> {
     pub(crate) columns: &'a Vec<String>,
-    pub(crate) row: T
+    pub(crate) row: &'a Vec<Value>
+}
+
+/// A row with mut ref values for a `Table` or `TableSlice`.
+#[derive(Debug)]
+pub struct MutRefRow<'a> {
+    pub(crate) columns: &'a Vec<String>,
+    pub(crate) row: &'a mut Vec<Value>
 }
 
 /// A owned row for a `Table` or `TableSlice`.

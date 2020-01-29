@@ -10,7 +10,7 @@ use std::rc::Rc;
 use csv::{Reader};
 use rayon::prelude::*;
 
-use crate::{Table, TableOperations, TableSlice, TableError, OwnedRow, BorrowedRow};
+use crate::{Table, TableOperations, TableSlice, TableError, OwnedRow, RefRow, MutRefRow};
 use crate::value::Value;
 
 /// A table with row-oriented data
@@ -244,11 +244,11 @@ pub struct RowTableIter<'a> {
 }
 
 impl <'a> Iterator for RowTableIter<'a> {
-    type Item=BorrowedRow<'a, &'a Vec<Value>>;
+    type Item= RefRow<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row) = self.iter.next() {
-            Some(BorrowedRow{ columns: &self.columns, row })
+            Some(RefRow { columns: &self.columns, row })
         } else {
             None
         }
@@ -263,11 +263,11 @@ pub struct RowTableMutIter<'a> {
 }
 
 impl <'a> Iterator for RowTableMutIter<'a> {
-    type Item=BorrowedRow<'a, &'a mut Vec<Value>>;
+    type Item= MutRefRow<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(row) = self.iter.next() {
-            Some(BorrowedRow{ columns: &self.columns, row })
+            Some(MutRefRow { columns: &self.columns, row })
         } else {
             None
         }
@@ -284,7 +284,7 @@ impl IntoIterator for RowTable {
 }
 
 impl <'a> IntoIterator for &'a RowTable {
-    type Item=BorrowedRow<'a, &'a Vec<Value>>;
+    type Item= RefRow<'a>;
     type IntoIter=RowTableIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -293,7 +293,7 @@ impl <'a> IntoIterator for &'a RowTable {
 }
 
 impl <'a> IntoIterator for &'a mut RowTable {
-    type Item=BorrowedRow<'a, &'a mut Vec<Value>>;
+    type Item= MutRefRow<'a>;
     type IntoIter=RowTableMutIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {

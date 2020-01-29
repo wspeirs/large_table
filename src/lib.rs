@@ -23,7 +23,7 @@ mod row_table;
 //pub use crate::row_table::RowTable;
 pub use crate::value::Value;
 use crate::table_error::TableError;
-use crate::row::{OwnedRow, BorrowedRow};
+use crate::row::{OwnedRow, RefRow, MutRefRow};
 
 // Playground: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=98ca951a70269d44cb48230359857f60
 
