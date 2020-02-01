@@ -7,11 +7,12 @@ use std::iter::Map;
 use std::rc::Rc;
 
 
-use csv::{Reader};
+use csv::{Reader, StringRecord, ByteRecord, ReaderBuilder, Trim};
 use rayon::prelude::*;
 
 use crate::{Table, TableOperations, TableSlice, TableError, OwnedRow, RefRow, MutRefRow};
 use crate::value::Value;
+use crate::row::Row;
 use chrono::format::Item::OwnedSpace;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
@@ -40,34 +41,30 @@ impl <'a> Table<'a> for RowTable {
 
     /// Read in a CSV file, and construct a RowTable
     fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self, IOError> {
+//        let mut csv = ReaderBuilder::new().trim(Trim::All).from_path(path)?;
         let mut csv = Reader::from_path(path)?;
 
         // get the headers from the CSV file
         let columns = csv.headers()?.iter().map(|h| String::from(h)).collect::<Vec<_>>();
-        let mut rows = Vec::new();
 
         if columns.iter().collect::<HashSet<_>>().len() != columns.len() {
             return Err(IOError::new(ErrorKind::InvalidData, "Duplicate columns detected in the file"));
         }
 
-        // go through each row, in parallel, and insert it into rows vector
-        rows.par_extend(csv.records().par_bridge().map(|result| {
-            if result.is_err() {
-                panic!("Error parsing row: {:?}", result.err().unwrap());
-            }
+        let mut rows = Vec::new();
+////        let mut record = ByteRecord::new();
+        let mut record = StringRecord::new();
+//
+////        while csv.read_byte_record(&mut record).map_err(|e| IOError::new(ErrorKind::Other, e))? {
+        while csv.read_record(&mut record).map_err(|e| IOError::new(ErrorKind::Other, e))? {
+//            let row = record.iter().map(|s| Value::String(s.to_string())).collect::<Vec<_>>();
+            let row = record.iter().map(|s| Value::new(s)).collect::<Vec<_>>();
 
-            let csv_row = result.unwrap();
+            rows.push(row);
+        }
 
-            let mut table_row = Vec::with_capacity(columns.len());
-
-            for c in 0..columns.len() {
-                let val = csv_row.get(c);
-
-                table_row.push(match val { Some(s) => Value::new(s), None => Value::Empty });
-            }
-
-            table_row
-        }));
+        // shrink the vector down so we're not chewing up more memory than needed
+        rows.shrink_to_fit();
 
         Ok(RowTable {
             columns,
@@ -75,18 +72,17 @@ impl <'a> Table<'a> for RowTable {
         })
     }
 
-    fn append_row<R>(&mut self, row: R) -> Result<(), TableError> {
+    fn append_row<'b, R: 'b>(&mut self, row: R) -> Result<(), TableError>  where R: Row<'b> {
         // make sure the rows are the same width
-//        if self.width() != row.width() {
-//            let err_str = format!("Row width doesn't match table width: {} != {}", row.width(), self.width());
-//            return Err(TableError::new(err_str.as_str()));
-//        }
-//
-//        // convert to a Vec
-//        let row_vec = row.iter().cloned().collect::<Vec<_>>();
-//
-//        Ok(self.rows.push(row_vec))
-        unimplemented!()
+        if self.width() != row.width() {
+            let err_str = format!("Row width doesn't match table width: {} != {}", row.width(), self.width());
+            return Err(TableError::new(err_str.as_str()));
+        }
+
+        // convert to a Vec
+        let row_vec = row.iter().cloned().collect::<Vec<_>>();
+
+        Ok(self.rows.push(row_vec))
     }
 
     fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, mut f :F) -> Result<(), TableError> {
@@ -396,16 +392,16 @@ impl <'a> Iterator for RowTableSliceIter<'a> {
     }
 }
 
-impl <'a> IntoIterator for RowTableSlice<'a> {
-    type Item=OwnedRow;
-    type IntoIter=RowTableSliceIntoIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let cols = Rc::new(self.columns.clone());
-
-        RowTableSliceIntoIter{ slice: self, columns: cols, cur_pos: 0 }
-    }
-}
+//impl <'a> IntoIterator for RowTableSlice<'a> {
+//    type Item=OwnedRow;
+//    type IntoIter=RowTableSliceIntoIter<'a>;
+//
+//    fn into_iter(self) -> Self::IntoIter {
+//        let cols = Rc::new(self.columns.clone());
+//
+//        RowTableSliceIntoIter{ slice: self, columns: cols, cur_pos: 0 }
+//    }
+//}
 
 impl <'a> IntoIterator for &'a RowTableSlice<'a> {
     type Item= RefRow<'a>;

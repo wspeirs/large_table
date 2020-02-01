@@ -15,12 +15,12 @@ impl Error for TableError {
 
 impl Display for TableError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
-        writeln!(f, "{}", self.reason)
+        write!(f, "{}", self.reason)
     }
 }
 
 impl TableError {
-    pub(crate) fn new(reason :&str) -> TableError {
+    pub fn new(reason :&str) -> TableError {
         TableError { reason: String::from(reason) }
     }
 }

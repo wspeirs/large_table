@@ -11,14 +11,14 @@ use crate::Table;
 
 
 /// A owned row for a `Table` or `TableSlice`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OwnedRow {
     pub(crate) columns: Rc<Vec<String>>,
     pub(crate) row: Vec<Value>
 }
 
 /// A row with ref values for a `Table` or `TableSlice`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RefRow<'a> {
     pub(crate) columns: &'a Vec<String>,
     pub(crate) row: &'a Vec<Value>
@@ -48,11 +48,11 @@ pub trait Row<'a> {
     fn at(&self, pos :usize) -> Result<Value, TableError>;
 
     #[inline]
-    fn width(&'a self) -> usize {
+    fn width(&self) -> usize {
         self.columns().len()
     }
 
-    fn columns(&'a self) -> &'a Vec<String>;
+    fn columns(&self) -> Vec<String>;
     fn iter(&self) -> ValueIterator;
 }
 
@@ -67,8 +67,8 @@ impl <'a> Row<'a> for OwnedRow {
         }
     }
 
-    fn columns(&'a self) -> &'a Vec<String> {
-        self.columns.as_ref()
+    fn columns(&self) -> Vec<String> {
+        (*self.columns.clone()).clone()
     }
 
     /// Return an `Iterator` over the values in the row.
@@ -88,8 +88,8 @@ impl <'a> Row<'a> for RefRow<'a> {
         }
     }
 
-    fn columns(&'a self) -> &'a Vec<String> {
-        self.columns.as_ref()
+    fn columns(&self) -> Vec<String> {
+        self.columns.clone()
     }
 
     /// Return an `Iterator` over the values in the row.
@@ -109,8 +109,8 @@ impl <'a> Row<'a> for MutRefRow<'a> {
         }
     }
 
-    fn columns(&'a self) -> &'a Vec<String> {
-        self.columns.as_ref()
+    fn columns(&self) -> Vec<String> {
+        self.columns.clone()
     }
 
     /// Return an `Iterator` over the values in the row.

@@ -23,8 +23,9 @@ mod row_table;
 // expose some of the underlying structures from other files
 //pub use crate::row_table::RowTable;
 pub use crate::value::Value;
-use crate::table_error::TableError;
-use crate::row::{Row, OwnedRow, RefRow, MutRefRow};
+pub use crate::table_error::TableError;
+pub use crate::row::{Row, OwnedRow, RefRow, MutRefRow};
+pub use crate::row_table::{RowTable, RowTableSlice};
 
 // Playground: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=98ca951a70269d44cb48230359857f60
 
@@ -54,7 +55,7 @@ pub trait Table<'a>: TableOperations<'a> {
         Ok( () )
     }
 
-    fn append_row<R>(&mut self, row :R) -> Result<(), TableError>;
+    fn append_row<'b, R: 'b>(&mut self, row: R) -> Result<(), TableError>  where R: Row<'b>;
 
     /// Adds a column with `column_name` to the end of the table filling in all rows with `value`.
     /// This method works in parallel and is therefore usually faster than `add_column_with`
