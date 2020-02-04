@@ -24,38 +24,36 @@ mod row_table;
 //pub use crate::row_table::RowTable;
 pub use crate::value::Value;
 pub use crate::table_error::TableError;
-pub use crate::row::{Row, OwnedRow, RefRow, MutRefRow};
+pub use crate::row::{Row, RowSlice};
 pub use crate::row_table::{RowTable, RowTableSlice};
 
 // Playground: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=98ca951a70269d44cb48230359857f60
 
 /// The main interface into the mem_table library
-pub trait Table<'a>: TableOperations<'a> {
-    type MutIter: Iterator<Item=MutRefRow<'a>>;
-
+pub trait Table: TableOperations {
     /// Create a blank RowTable
     fn new(columns :&[&str]) -> Self;
 
-    fn iter_mut(&'a mut self) -> Self::MutIter;
+//    fn iter_mut(&'a mut self) -> Self::MutIter;
 
     /// Read in a CSV file, and construct a RowTable
     fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self, IOError> where Self: Sized;
 
-    fn append<'b>(&mut self, table :impl TableOperations<'b>) -> Result<(), TableError> {
+    fn append(&mut self, table :impl TableOperations) -> Result<(), TableError> {
         // make sure the columns are the same
         if !self.columns().iter().zip(table.columns().iter()).all(|(a, b)| a == b) {
             let err_str = format!("Columns don't match between tables: {:?} != {:?}", self.columns(), table.columns());
             return Err(TableError::new(err_str.as_str()));
         }
 
-        for row in table.into_iter() {
+        for row in table.iter() {
             self.append_row(row);
         }
 
         Ok( () )
     }
 
-    fn append_row<'b, R: 'b>(&mut self, row: R) -> Result<(), TableError>  where R: Row<'b>;
+    fn append_row<R>(&mut self, row: R) -> Result<(), TableError>  where R: Row;
 
     /// Adds a column with `column_name` to the end of the table filling in all rows with `value`.
     /// This method works in parallel and is therefore usually faster than `add_column_with`
@@ -69,13 +67,13 @@ pub trait Table<'a>: TableOperations<'a> {
 }
 
 /// Operations that can be performed on `Table`s or `TableSlice`s.
-pub trait TableOperations<'a> {
-    type TableSliceType: TableSlice<'a>;
-    type IntoIter: Iterator<Item=OwnedRow>;
-    type Iter: Iterator<Item=RefRow<'a>>;
+pub trait TableOperations {
+    type TableSliceType: TableSlice;
+    type RowType: Row;
+    type Iter: Iterator<Item=Self::RowType>;
 
-    fn into_iter(self) -> Self::IntoIter;
-    fn iter(&'a self) -> Self::Iter;
+//    fn into_iter(self) -> Self::IntoIter;
+    fn iter(&self) -> Self::Iter;
 
     fn columns(&self) -> Vec<String>;
 
@@ -88,7 +86,7 @@ pub trait TableOperations<'a> {
     }
 
     #[inline]
-    fn len(&'a self) -> usize {
+    fn len(&self) -> usize {
         self.iter().count()
     }
 
@@ -98,7 +96,7 @@ pub trait TableOperations<'a> {
     }
 
     /// Write a table out to a CSV file
-    fn to_csv(&'a self, csv_path :&Path) -> Result<(), TableError> {
+    fn to_csv(&self, csv_path :&Path) -> Result<(), TableError> {
         let mut csv = Writer::from_path(csv_path).map_err(|e| TableError::new(e.to_string().as_str()))?;
 
         // write out the headers first
@@ -106,32 +104,31 @@ pub trait TableOperations<'a> {
 
         // go through each row, writing the records converted to Strings
         for row in self.iter() {
-            csv.write_record(row.iter().map(|f| String::from(f)));
+//            csv.write_record(row.iter().map(|f| String::from(f)));
         }
 
         Ok( () )
     }
 
-    fn group_by(&'a self, column :&str) -> Result<HashMap<Value, Self::TableSliceType>, TableError>;
+    fn group_by(&self, column :&str) -> Result<HashMap<Value, Self::TableSliceType>, TableError>;
 
-    fn unique(&'a self, column :&str) -> Result<HashSet<Value>, TableError>  {
-        // get the position in the row we're concerned with
-        let pos = self.column_position(column)?;
+    fn unique(&self, column :&str) -> Result<HashSet<Value>, TableError>  {
+        //TODO: make sure the column name is valid
 
         // insert the values into the HashSet
         // TODO: use Rayon to make this go in parallel
-        Ok(self.iter().map(|row| row.at(pos).unwrap()).collect::<HashSet<_>>())
+        Ok(self.iter().map(|row| row.get(column).unwrap().clone()).collect::<HashSet<_>>())
     }
 
     /// Returns a `TableSlice` with all rows that where `value` matches in the `column`.
-    fn find(&'a self, column :&str, value :&Value) -> Result<Self::TableSliceType, TableError> {
+    fn find(&self, column :&str, value :&Value) -> Result<Self::TableSliceType, TableError> {
         // get the position in the underlying table
         let pos = self.column_position(column)?;
 
-        self.find_by(|row| row.at(pos).unwrap() == *value)
+        self.find_by(|row| row.get(column).unwrap() == value)
     }
 
-    fn find_by<P: FnMut(RefRow) -> bool>(&'a self, predicate :P) -> Result<Self::TableSliceType, TableError>;
+    fn find_by<P: FnMut(Self::RowType) -> bool>(&self, predicate :P) -> Result<Self::TableSliceType, TableError>;
 
     /// Sorts the rows in the table, in an unstable way, in ascending order, by the columns provided, in the order they're provided.
     ///
@@ -163,7 +160,7 @@ pub trait TableOperations<'a> {
     }
 
     /// Sorts the rows in the table, in an unstable way, in ascending order using the `compare` function to compare values.
-    fn sort_by<F: FnMut(RefRow, RefRow) -> Ordering>(&mut self, compare :F) -> Result<(), TableError>;
+    fn sort_by<T, F: FnMut(RowSlice<T>, RowSlice<T>) -> Ordering>(&mut self, compare :F) -> Result<(), TableError>;
 
     /// Performs an ascending stable sort on the rows in the table, by the columns provided, in the order they're provided.
     ///
@@ -195,14 +192,14 @@ pub trait TableOperations<'a> {
     }
 
     /// Performs an ascending stable sort on the rows in the table using the `compare` function to compare values.
-    fn stable_sort_by<F: FnMut(RefRow, RefRow) -> Ordering>(&mut self, compare :F) -> Result<(), TableError>;
+    fn stable_sort_by<T, F: FnMut(RowSlice<T>, RowSlice<T>) -> Ordering>(&mut self, compare :F) -> Result<(), TableError>;
 
-    fn split_rows_at(&'a self, mid :usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError>;
+    fn split_rows_at(&self, mid :usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError>;
 
 }
 
 /// A `TableSlice` is a view into a `Table`.
-pub trait TableSlice<'a>: TableOperations<'a> {
+pub trait TableSlice: TableOperations {
     fn column_position(&self, column :&str) -> Result<usize, TableError> {
         if self.columns().iter().find(|c| c.as_str() == column).is_none() {
             let err_str = format!("Could not find column in slice: {}", column);
