@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::value::Value;
 use crate::table_error::TableError;
@@ -13,7 +14,7 @@ use crate::Table;
 /// A owned row for a `Table` or `TableSlice`.
 #[derive(Debug, Clone)]
 pub struct OwnedRow {
-    pub(crate) columns: Rc<Vec<String>>,
+    pub(crate) columns: Arc<Vec<String>>,
     pub(crate) row: Vec<Value>
 }
 
