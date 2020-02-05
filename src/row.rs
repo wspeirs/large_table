@@ -22,7 +22,9 @@ pub struct RowSlice<T> {
 /// Operations that you can perform on a Row
 pub trait Row {
     fn get(&self, column :&str) -> Result<&Value, TableError>;
-//    fn set(&mut self, column :&str, value :Value) -> Result<Value, TableError>;
+    fn set(&mut self, column :&str, value :Value) -> Result<Value, TableError> {
+        unimplemented!()
+    }
 
     #[inline]
     fn width(&self) -> usize {

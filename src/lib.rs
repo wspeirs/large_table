@@ -34,6 +34,8 @@ pub trait Table: TableOperations {
     /// Create a blank RowTable
     fn new(columns :&[&str]) -> Self;
 
+    fn update_by<F :FnMut(&mut Self::RowType)>(&mut self, update :F);
+
 //    fn iter_mut(&'a mut self) -> Self::MutIter;
 
     /// Read in a CSV file, and construct a RowTable
@@ -127,7 +129,7 @@ pub trait TableOperations {
         self.find_by(|row| row.get(column).unwrap() == value)
     }
 
-    fn find_by<P: FnMut(Self::RowType) -> bool>(&self, predicate :P) -> Result<Self::TableSliceType, TableError>;
+    fn find_by<P: FnMut(&Self::RowType) -> bool>(&self, predicate :P) -> Result<Self::TableSliceType, TableError>;
 
     /// Sorts the rows in the table, in an unstable way, in ascending order, by the columns provided, in the order they're provided.
     ///

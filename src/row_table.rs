@@ -38,6 +38,12 @@ impl Table for RowTable {
         })))
     }
 
+    fn update_by<F: FnMut(&mut Self::RowType)>(&mut self, mut update: F) {
+        for mut row in self.iter() {
+            update(&mut row);
+        }
+    }
+
     /// Read in a CSV file, and construct a RowTable
     fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self, IOError> {
 //        let mut csv = ReaderBuilder::new().trim(Trim::All).from_path(path)?;
@@ -140,11 +146,11 @@ impl TableOperations for RowTable {
         })).collect())
     }
 
-    fn find_by<P: FnMut(RowSlice<RowTableInner>) -> bool>(&self, mut predicate :P) -> Result<RowTableSlice, TableError> {
+    fn find_by<P: FnMut(&RowSlice<RowTableInner>) -> bool>(&self, mut predicate :P) -> Result<RowTableSlice, TableError> {
         let mut slice_rows = Vec::new();
 
         for (i, row) in self.iter().enumerate() {
-            if predicate(row) {
+            if predicate(&row) {
                 slice_rows.push(i);
             }
         }
@@ -288,7 +294,7 @@ impl TableOperations for RowTableSlice {
         unimplemented!();
     }
 
-    fn find_by<P: FnMut(RowSlice<RowTableInner>) -> bool>(&self, mut predicate: P) -> Result<RowTableSlice, TableError> {
+    fn find_by<P: FnMut(&RowSlice<RowTableInner>) -> bool>(&self, mut predicate: P) -> Result<RowTableSlice, TableError> {
         unimplemented!();
 //        let mut slice_rows = Vec::new();
 //
@@ -373,6 +379,20 @@ impl Iterator for RowTableSliceIter {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use crate::{RowTable, TableOperations, Table, Row, Value};
+
+    #[test]
+    fn to_from_csv() {
+        let mut table :RowTable = RowTable::new(&["B"]);
+
+        table.find_by(|r| { r.get("B"); true });
+//        table.find_by(|r| { r.set("B", Value::Integer(7)); true });
+        table.update_by(|r| { r.set("B", Value::Integer(7));} );
+    }
+}
 
 //
 //#[cfg(test)]
