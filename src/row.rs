@@ -34,6 +34,7 @@ pub trait Row {
     fn iter(&self) -> ValueIterator;
 }
 
+
  /// An iterator over the `Value`s in a `Row`.
 pub struct ValueIterator<'a> {
     iter: core::slice::Iter<'a, Value>

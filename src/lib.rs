@@ -72,7 +72,6 @@ pub trait TableOperations {
     type RowType: Row;
     type Iter: Iterator<Item=Self::RowType>;
 
-//    fn into_iter(self) -> Self::IntoIter;
     fn iter(&self) -> Self::Iter;
 
     fn columns(&self) -> Vec<String>;
@@ -133,7 +132,7 @@ pub trait TableOperations {
     /// Sorts the rows in the table, in an unstable way, in ascending order, by the columns provided, in the order they're provided.
     ///
     /// If the columns passed are `A`, `B`, `C`, then the rows will be sored by column `A` first, then `B`, then `C`.
-    fn sort(&mut self, columns :&[&str]) -> Result<(), TableError> {
+    fn sort(&self, columns :&[&str]) -> Result<Self::TableSliceType, TableError> {
         // make sure columns were passed
         if columns.is_empty() {
             return Err(TableError::new("No columns passed to sort"));
@@ -160,12 +159,12 @@ pub trait TableOperations {
     }
 
     /// Sorts the rows in the table, in an unstable way, in ascending order using the `compare` function to compare values.
-    fn sort_by<T, F: FnMut(RowSlice<T>, RowSlice<T>) -> Ordering>(&mut self, compare :F) -> Result<(), TableError>;
+    fn sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, compare :F) -> Result<Self::TableSliceType, TableError>;
 
     /// Performs an ascending stable sort on the rows in the table, by the columns provided, in the order they're provided.
     ///
     /// If the columns passed are `A`, `B`, `C`, then the rows will be sored by column `A` first, then `B`, then `C`.
-    fn stable_sort(&mut self, columns :&[&str]) -> Result<(), TableError> {
+    fn stable_sort(&mut self, columns :&[&str]) -> Result<Self::TableSliceType, TableError> {
         // make sure columns were passed
         if columns.is_empty() {
             return Err(TableError::new("No columns passed to sort"));
@@ -192,10 +191,9 @@ pub trait TableOperations {
     }
 
     /// Performs an ascending stable sort on the rows in the table using the `compare` function to compare values.
-    fn stable_sort_by<T, F: FnMut(RowSlice<T>, RowSlice<T>) -> Ordering>(&mut self, compare :F) -> Result<(), TableError>;
+    fn stable_sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, compare :F) -> Result<Self::TableSliceType, TableError>;
 
     fn split_rows_at(&self, mid :usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError>;
-
 }
 
 /// A `TableSlice` is a view into a `Table`.
