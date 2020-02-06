@@ -92,18 +92,18 @@ impl Value {
     }
 
     pub fn as_integer(&self) -> Option<i64> {
-        if let Value::Integer(i) = self {
-            Some(*i)
-        } else {
-            None
+        match self {
+            Value::Integer(i) => Some(*i),
+            Value::Float(f) => Some(f.0 as i64),
+            _ => None
         }
     }
 
     pub fn as_float(&self) -> Option<f64> {
-        if let Value::Float(f) = self {
-            Some(f.0)
-        } else {
-            None
+        match self {
+            Value::Integer(i) => Some(*i as f64),
+            Value::Float(f) => Some(f.0),
+            _ => None
         }
     }
 

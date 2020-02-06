@@ -7,6 +7,7 @@ use std::iter::Map;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::cell::RefCell;
+use std::fmt::{Display, Formatter, Error as FmtError};
 
 
 use csv::{Reader, StringRecord, ByteRecord, ReaderBuilder, Trim};
@@ -162,29 +163,29 @@ impl TableOperations for RowTable {
         })
     }
 
-    fn sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, mut compare: F) -> Result<RowTableSlice, TableError> {
-        let column_map :Rc<HashMap<String, usize>> = Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i,s)| (s.clone(), i)).collect());
-
-        let slice = RowTableSlice {
-            column_map,
-            rows: Rc::new((0..self.len()).collect()),
-            table: self.0.clone()
-        };
-
-        slice.sort_by(compare)
-    }
-
-    fn stable_sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, mut compare: F) -> Result<Self::TableSliceType, TableError> {
-        let column_map :Rc<HashMap<String, usize>> = Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i,s)| (s.clone(), i)).collect());
-
-        let slice = RowTableSlice {
-            column_map,
-            rows: Rc::new((0..self.len()).collect()),
-            table: self.0.clone()
-        };
-
-        slice.stable_sort_by(compare)
-    }
+//    fn sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, mut compare: F) -> Result<RowTableSlice, TableError> {
+//        let column_map :Rc<HashMap<String, usize>> = Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i,s)| (s.clone(), i)).collect());
+//
+//        let slice = RowTableSlice {
+//            column_map,
+//            rows: Rc::new((0..self.len()).collect()),
+//            table: self.0.clone()
+//        };
+//
+//        slice.sort_by(compare)
+//    }
+//
+//    fn stable_sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, mut compare: F) -> Result<Self::TableSliceType, TableError> {
+//        let column_map :Rc<HashMap<String, usize>> = Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i,s)| (s.clone(), i)).collect());
+//
+//        let slice = RowTableSlice {
+//            column_map,
+//            rows: Rc::new((0..self.len()).collect()),
+//            table: self.0.clone()
+//        };
+//
+//        slice.stable_sort_by(compare)
+//    }
 
     fn split_rows_at(&self, mid: usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError> {
         if mid >= self.0.borrow().rows.len() {
@@ -210,8 +211,17 @@ impl TableOperations for RowTable {
 
 
 impl Row for RowSlice<RowTableInner> {
-    fn get(&self, column: &str) -> Result<&Value, TableError> {
-        unimplemented!()
+    fn get(&self, column: &str) -> Result<Value, TableError> {
+        let pos = self.column_map.get(column);
+
+        if pos.is_none() {
+            let err_str = format!("Could not find column in RowSlice: {}", column);
+            return Err(TableError::new(err_str.as_str()));
+        }
+
+        let row = &self.table.borrow().rows[self.row];
+
+        Ok(row[*pos.unwrap()].clone())
     }
 
     fn columns(&self) -> Vec<String> {
@@ -223,6 +233,14 @@ impl Row for RowSlice<RowTableInner> {
 //        ValueIterator { iter: self.table.borrow().rows[self.row].iter() }
     }
 }
+
+impl Display for RowSlice<RowTableInner> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        // TODO: Fix this
+        write!(f, "{:?}", self.table.borrow().rows[self.row])
+    }
+}
+
 
 // Iterator for RowTable
 //https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=856142d55cbca5cfda7bc97a744a0c4e - Iterator/Row Playground
@@ -262,27 +280,36 @@ impl Iterator for RowTableIter {
 //    }
 //}
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RowTableSlice {
     column_map: Rc<HashMap<String, usize>>, // mapping of column names to row offsets
-    rows: Rc<Vec<usize>>,                    // index of the corresponding row in the Table
-    table: Rc<RefCell<RowTableInner>>    // reference to the underlying table
+    rows: Rc<Vec<usize>>,                   // index of the corresponding row in the Table
+    table: Rc<RefCell<RowTableInner>>       // reference to the underlying table
 }
+
+impl Display for RowTableSlice {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        for row in self.rows.iter() {
+            writeln!(f, "{:?}", self.table.borrow().rows[*row]);
+        }
+
+        Ok( () )
+    }
+}
+
 
 impl TableOperations for RowTableSlice {
     type TableSliceType = RowTableSlice;
     type RowType = RowSlice<RowTableInner>;
-    //    type IntoIter = RowTableSliceIntoIter;
     type Iter = RowTableSliceIter;
 
-//    fn into_iter(self) -> RowTableSliceIntoIter {
-//        let cols = Arc::new(self.columns.clone());
-//
-//        RowTableSliceIntoIter{ slice: self, columns: cols, cur_pos: 0 }
-//    }
-
     fn iter(&self) -> RowTableSliceIter{
-        unimplemented!()
+        RowTableSliceIter {
+            column_map: self.column_map.clone(),
+            rows: self.rows.clone(),
+            table: self.table.clone(),
+            cur_pos: 0
+        }
     }
 
     #[inline]
@@ -295,49 +322,22 @@ impl TableOperations for RowTableSlice {
     }
 
     fn find_by<P: FnMut(&RowSlice<RowTableInner>) -> bool>(&self, mut predicate: P) -> Result<RowTableSlice, TableError> {
-        unimplemented!();
-//        let mut slice_rows = Vec::new();
-//
-//        for &row_index in self.rows.iter() {
-//            let row = RowSlice<RowTableInner>{ columns: &self.columns, row: &self.table.borrow().rows[row_index]};
-//
-//            // run the predicate against the row
-//            if predicate(row) {
-//                slice_rows.push(row_index);
-//            }
-//        }
-//
-//        Ok(RowTableSlice {
-//            columns: self.columns.clone(),
-//            rows: slice_rows,
-//            table: self.table.clone()
-//        })
-    }
+        let mut slice_rows = Vec::new();
 
-    fn sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, mut compare: F) -> Result<Self::TableSliceType, TableError> {
-        unimplemented!()
-//        let columns = self.columns.clone();
-//        let table = self.table.clone();
-//
-//        Ok(self.rows.sort_unstable_by(|a, b| {
-//            let a_row = RowSlice<RowTableInner> { columns: &columns, row: &table.borrow().rows[*a].clone() };
-//            let b_row = RowSlice<RowTableInner> { columns: &columns, row: &table.borrow().rows[*b].clone() };
-//
-//            compare(a_row, b_row)
-//        }))
-    }
+        for &row_index in self.rows.iter() {
+            let row = RowSlice { column_map: self.column_map.clone(), table: self.table.clone(), row: row_index };
 
-    fn stable_sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, compare: F) -> Result<Self::TableSliceType, TableError> {
-        unimplemented!()
-//        let columns = self.columns.clone();
-//        let table = self.table.clone();
-//
-//        Ok(self.rows.sort_by(|a, b| {
-//            let a_row = RowSlice<RowTableInner> { columns: &columns, row: &table.borrow().rows[*a] };
-//            let b_row = RowSlice<RowTableInner> { columns: &columns, row: &table.borrow().rows[*b] };
-//
-//            compare(a_row, b_row)
-//        }))
+            // run the predicate against the row
+            if predicate(&row) {
+                slice_rows.push(row_index);
+            }
+        }
+
+        Ok(RowTableSlice {
+            column_map: self.column_map.clone(),
+            table: self.table.clone(),
+            rows: Rc::new(slice_rows),
+        })
     }
 
     fn split_rows_at(&self, mid: usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError> {
@@ -354,7 +354,38 @@ impl TableOperations for RowTableSlice {
     }
 }
 
-impl TableSlice for RowTableSlice { }
+impl TableSlice for RowTableSlice {
+    fn sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, mut compare: F) -> Result<Self::TableSliceType, TableError> {
+        let mut rows = self.rows.iter().cloned().collect::<Vec<_>>();
+
+        rows.sort_unstable_by(|&a, &b| {
+            let a_row = RowSlice { column_map: self.column_map.clone(), table: self.table.clone(), row: a };
+            let b_row = RowSlice { column_map: self.column_map.clone(), table: self.table.clone(), row: b };
+
+            compare(a_row, b_row)
+        });
+
+        Ok(RowTableSlice {
+            column_map: self.column_map.clone(),
+            rows: Rc::new(rows),
+            table: self.table.clone()
+        })
+    }
+
+//    fn stable_sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, compare: F) -> Result<Self::TableSliceType, TableError> {
+//        unimplemented!()
+//        let columns = self.columns.clone();
+//        let table = self.table.clone();
+//
+//        Ok(self.rows.sort_by(|a, b| {
+//            let a_row = RowSlice<RowTableInner> { columns: &columns, row: &table.borrow().rows[*a] };
+//            let b_row = RowSlice<RowTableInner> { columns: &columns, row: &table.borrow().rows[*b] };
+//
+//            compare(a_row, b_row)
+//        }))
+//    }
+
+}
 
 /// Reference `Iterator` for rows in a table.
 pub struct RowTableSliceIter {

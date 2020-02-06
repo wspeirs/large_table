@@ -66,6 +66,71 @@ pub trait Table: TableOperations {
     /// Adds a column with `column_name` to the end of the table using `f` to generate the values for each row.
     /// This method works a row-at-a-time and therefore can be slower than `add_column`.
     fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, f :F) -> Result<(), TableError>;
+
+//    /// Sorts the rows in the table, in an unstable way, in ascending order, by the columns provided, in the order they're provided.
+//    ///
+//    /// If the columns passed are `A`, `B`, `C`, then the rows will be sored by column `A` first, then `B`, then `C`.
+//    fn sort(&mut self, columns :&[&str]) -> Result<(), TableError> {
+//        // make sure columns were passed
+//        if columns.is_empty() {
+//            return Err(TableError::new("No columns passed to sort"));
+//        }
+//
+//        // make sure all the columns are there
+//        for col in columns {
+//            self.column_position(col)?;
+//        }
+//
+//        self.sort_by(|a, b| {
+//            let mut ret = Ordering::Equal;
+//
+//            for col in columns {
+//                ret = a.get(*col).unwrap().cmp(&b.get(*col).unwrap());
+//
+//                if ret != Ordering::Equal {
+//                    return ret;
+//                }
+//            }
+//
+//            ret
+//        })
+//    }
+
+//    /// Sorts the rows in the table, in an unstable way, in ascending order using the `compare` function to compare values.
+//    fn sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&mut self, compare :F) -> Result<(), TableError>;
+
+//    /// Performs an ascending stable sort on the rows in the table, by the columns provided, in the order they're provided.
+//    ///
+//    /// If the columns passed are `A`, `B`, `C`, then the rows will be sored by column `A` first, then `B`, then `C`.
+//    fn stable_sort(&self, columns :&[&str]) -> Result<Self::TableSliceType, TableError> {
+//        // make sure columns were passed
+//        if columns.is_empty() {
+//            return Err(TableError::new("No columns passed to sort"));
+//        }
+//
+//        // make sure all the columns are there
+//        for col in columns {
+//            self.column_position(col)?;
+//        }
+//
+//        self.stable_sort_by(|a, b| {
+//            let mut ret = Ordering::Equal;
+//
+//            for col in columns {
+//                ret = a.get(*col).unwrap().cmp(&b.get(*col).unwrap());
+//
+//                if ret != Ordering::Equal {
+//                    return ret;
+//                }
+//            }
+//
+//            ret
+//        })
+//    }
+
+//    /// Performs an ascending stable sort on the rows in the table using the `compare` function to compare values.
+//    fn stable_sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, compare :F) -> Result<Self::TableSliceType, TableError>;
+
 }
 
 /// Operations that can be performed on `Table`s or `TableSlice`s.
@@ -126,10 +191,24 @@ pub trait TableOperations {
         // get the position in the underlying table
         let pos = self.column_position(column)?;
 
-        self.find_by(|row| row.get(column).unwrap() == value)
+        self.find_by(|row| row.get(column).unwrap() == *value)
     }
 
     fn find_by<P: FnMut(&Self::RowType) -> bool>(&self, predicate :P) -> Result<Self::TableSliceType, TableError>;
+
+    fn split_rows_at(&self, mid :usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError>;
+}
+
+/// A `TableSlice` is a view into a `Table`.
+pub trait TableSlice: TableOperations {
+    fn column_position(&self, column :&str) -> Result<usize, TableError> {
+        if self.columns().iter().find(|c| c.as_str() == column).is_none() {
+            let err_str = format!("Could not find column in slice: {}", column);
+            return Err(TableError::new(err_str.as_str()));
+        }
+
+        TableOperations::column_position(self, column)
+    }
 
     /// Sorts the rows in the table, in an unstable way, in ascending order, by the columns provided, in the order they're provided.
     ///
@@ -142,7 +221,7 @@ pub trait TableOperations {
 
         // make sure all the columns are there
         for col in columns {
-            self.column_position(col)?;
+            TableSlice::column_position(self, col)?;
         }
 
         self.sort_by(|a, b| {
@@ -163,51 +242,6 @@ pub trait TableOperations {
     /// Sorts the rows in the table, in an unstable way, in ascending order using the `compare` function to compare values.
     fn sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, compare :F) -> Result<Self::TableSliceType, TableError>;
 
-    /// Performs an ascending stable sort on the rows in the table, by the columns provided, in the order they're provided.
-    ///
-    /// If the columns passed are `A`, `B`, `C`, then the rows will be sored by column `A` first, then `B`, then `C`.
-    fn stable_sort(&mut self, columns :&[&str]) -> Result<Self::TableSliceType, TableError> {
-        // make sure columns were passed
-        if columns.is_empty() {
-            return Err(TableError::new("No columns passed to sort"));
-        }
-
-        // make sure all the columns are there
-        for col in columns {
-            self.column_position(col)?;
-        }
-
-        self.stable_sort_by(|a, b| {
-            let mut ret = Ordering::Equal;
-
-            for col in columns {
-                ret = a.get(*col).unwrap().cmp(&b.get(*col).unwrap());
-
-                if ret != Ordering::Equal {
-                    return ret;
-                }
-            }
-
-            ret
-        })
-    }
-
-    /// Performs an ascending stable sort on the rows in the table using the `compare` function to compare values.
-    fn stable_sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, compare :F) -> Result<Self::TableSliceType, TableError>;
-
-    fn split_rows_at(&self, mid :usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError>;
-}
-
-/// A `TableSlice` is a view into a `Table`.
-pub trait TableSlice: TableOperations {
-    fn column_position(&self, column :&str) -> Result<usize, TableError> {
-        if self.columns().iter().find(|c| c.as_str() == column).is_none() {
-            let err_str = format!("Could not find column in slice: {}", column);
-            return Err(TableError::new(err_str.as_str()));
-        }
-
-        TableOperations::column_position(self, column)
-    }
 }
 
 

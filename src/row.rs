@@ -12,7 +12,6 @@ use crate::Table;
 
 // playground for Row & Iterators: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=5b1ead8cdf0cbaac2941ec9e15a942d5
 
-#[derive(Debug)]
 pub struct RowSlice<T> {
     pub(crate) column_map: Rc<HashMap<String, usize>>,
     pub(crate) table: Rc<RefCell<T>>,
@@ -21,7 +20,7 @@ pub struct RowSlice<T> {
 
 /// Operations that you can perform on a Row
 pub trait Row {
-    fn get(&self, column :&str) -> Result<&Value, TableError>;
+    fn get(&self, column :&str) -> Result<Value, TableError>;
     fn set(&mut self, column :&str, value :Value) -> Result<Value, TableError> {
         unimplemented!()
     }
