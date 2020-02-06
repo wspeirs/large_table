@@ -15,7 +15,7 @@ use rayon::prelude::*;
 
 use crate::{Table, TableOperations, TableSlice, TableError};
 use crate::value::Value;
-use crate::row::{Row, RowSlice, ValueIterator};
+use crate::row::{Row, RowSlice};
 use chrono::format::Item::OwnedSpace;
 use std::cmp::Ordering;
 
@@ -76,14 +76,18 @@ impl Table for RowTable {
     }
 
     fn append_row<R>(&mut self, row: R) -> Result<(), TableError>  where R: Row {
-        // make sure the rows are the same width
-        if self.width() != row.width() {
-            let err_str = format!("Row width doesn't match table width: {} != {}", row.width(), self.width());
-            return Err(TableError::new(err_str.as_str()));
-        }
+        // go through each column, and get the corresponding column from the row
+        let mut row_vec = Vec::new();
 
-        // convert to a Vec
-        let row_vec = row.iter().cloned().collect::<Vec<_>>();
+        for column in self.0.borrow().columns.iter() {
+            let val = row.get(column);
+
+            if let Err(e) = val {
+                return Err(e);
+            }
+
+            row_vec.push(val.unwrap());
+        }
 
         Ok(self.0.borrow_mut().rows.push(row_vec))
     }
@@ -226,11 +230,6 @@ impl Row for RowSlice<RowTableInner> {
 
     fn columns(&self) -> Vec<String> {
         self.column_map.keys().cloned().collect()
-    }
-
-    fn iter(&self) -> ValueIterator {
-        unimplemented!()
-//        ValueIterator { iter: self.table.borrow().rows[self.row].iter() }
     }
 }
 

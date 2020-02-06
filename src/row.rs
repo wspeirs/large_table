@@ -31,22 +31,4 @@ pub trait Row {
     }
 
     fn columns(&self) -> Vec<String>;
-
-    fn iter(&self) -> ValueIterator;
 }
-
-
- /// An iterator over the `Value`s in a `Row`.
-pub struct ValueIterator<'a> {
-    iter: core::slice::Iter<'a, Value>
-}
-
-// TODO: Need to honor columns
-impl <'a> Iterator for ValueIterator<'a> {
-    type Item = &'a Value;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
