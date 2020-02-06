@@ -75,6 +75,38 @@ impl Value {
         Value::String(String::from(value))
     }
 
+    pub fn as_string(&self) -> Option<String> {
+         if let Value::String(s) = self {
+             Some(s.clone())
+         } else {
+             None
+         }
+    }
+
+    pub fn as_date_time(&self) -> Option<NaiveDateTime> {
+        if let Value::DateTime(dt) = self {
+            Some(dt.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_integer(&self) -> Option<i64> {
+        if let Value::Integer(i) = self {
+            Some(*i)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_float(&self) -> Option<f64> {
+        if let Value::Float(f) = self {
+            Some(f.0)
+        } else {
+            None
+        }
+    }
+
     pub fn old(value :&str) -> Value {
         // first check to see if it's empty
         if value.is_empty() {
