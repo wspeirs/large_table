@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::cmp::Ordering;
 use std::path::Path;
 use std::io::{Error as IOError, ErrorKind};
 use std::ops::Index;
@@ -16,8 +17,6 @@ use rayon::prelude::*;
 use crate::{Table, TableOperations, TableSlice, TableError};
 use crate::value::Value;
 use crate::row::{Row, RowSlice};
-use chrono::format::Item::OwnedSpace;
-use std::cmp::Ordering;
 
 /// A table with row-oriented data
 #[derive(Debug, Clone)]
@@ -142,7 +141,7 @@ impl TableOperations for RowTable {
             slice.push(i);
         }
 
-        let column_map :Rc<HashMap<String, usize>> = Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect());
+        let column_map :Rc<Vec<(String, usize)>> = Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect());
 
         Ok(row_map.into_iter().map(|(k, v)| (k, RowTableSlice {
             column_map: column_map.clone(),
@@ -216,20 +215,22 @@ impl TableOperations for RowTable {
 
 impl Row for RowSlice<RowTableInner> {
     fn get(&self, column: &str) -> Result<Value, TableError> {
-        let pos = self.column_map.get(column);
+        let pos = self.column_map.iter().position(|(c, i)| c == column);
 
         if pos.is_none() {
             let err_str = format!("Could not find column in RowSlice: {}", column);
             return Err(TableError::new(err_str.as_str()));
         }
 
+        let pos = self.column_map[pos.unwrap()].1;
+
         let row = &self.table.borrow().rows[self.row];
 
-        Ok(row[*pos.unwrap()].clone())
+        Ok(row[pos].clone())
     }
 
     fn columns(&self) -> Vec<String> {
-        self.column_map.keys().cloned().collect()
+        self.column_map.iter().map(|(c,i)| c.clone()).collect()
     }
 }
 
@@ -247,7 +248,7 @@ impl Display for RowSlice<RowTableInner> {
 /// `Iterator` for rows in a table.
 pub struct RowTableIter {
     table: Rc<RefCell<RowTableInner>>,
-    column_map: Rc<HashMap<String, usize>>,
+    column_map: Rc<Vec<(String, usize)>>,
     cur_pos: usize
 }
 
@@ -281,7 +282,7 @@ impl Iterator for RowTableIter {
 
 #[derive(Clone)]
 pub struct RowTableSlice {
-    column_map: Rc<HashMap<String, usize>>, // mapping of column names to row offsets
+    column_map: Rc<Vec<(String, usize)>>,   // mapping of column names to row offsets
     rows: Rc<Vec<usize>>,                   // index of the corresponding row in the Table
     table: Rc<RefCell<RowTableInner>>       // reference to the underlying table
 }
@@ -313,7 +314,7 @@ impl TableOperations for RowTableSlice {
 
     #[inline]
     fn columns(&self) -> Vec<String> {
-        self.column_map.keys().cloned().collect()
+        self.column_map.iter().map(|(c,i)| c.clone()).collect()
     }
 
     fn group_by(&self, column: &str) -> Result<HashMap<Value, RowTableSlice>, TableError> {
@@ -388,7 +389,7 @@ impl TableSlice for RowTableSlice {
 
 /// Reference `Iterator` for rows in a table.
 pub struct RowTableSliceIter {
-    column_map: Rc<HashMap<String, usize>>,
+    column_map: Rc<Vec<(String, usize)>>,
     rows: Rc<Vec<usize>>,
     table: Rc<RefCell<RowTableInner>>,
     cur_pos: usize

@@ -13,7 +13,7 @@ use crate::Table;
 // playground for Row & Iterators: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=5b1ead8cdf0cbaac2941ec9e15a942d5
 
 pub struct RowSlice<T> {
-    pub(crate) column_map: Rc<HashMap<String, usize>>,
+    pub(crate) column_map: Rc<Vec<(String, usize)>>,
     pub(crate) table: Rc<RefCell<T>>,
     pub(crate) row: usize
 }
