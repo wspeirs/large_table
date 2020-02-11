@@ -22,7 +22,7 @@ mod row_table;
 
 // expose some of the underlying structures from other files
 //pub use crate::row_table::RowTable;
-pub use crate::value::Value;
+pub use crate::value::{Value, ValueType};
 pub use crate::table_error::TableError;
 pub use crate::row::{Row, RowSlice};
 pub use crate::row_table::{RowTable, RowTableSlice};
@@ -31,15 +31,7 @@ pub use crate::row_table::{RowTable, RowTableSlice};
 
 /// The main interface into the mem_table library
 pub trait Table: TableOperations {
-    /// Create a blank RowTable
-    fn new(columns :&[&str]) -> Self;
-
     fn update_by<F :FnMut(&mut Self::RowType)>(&mut self, update :F);
-
-//    fn iter_mut(&'a mut self) -> Self::MutIter;
-
-    /// Read in a CSV file, and construct a RowTable
-    fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self, IOError> where Self: Sized;
 
     fn append(&mut self, table :impl TableOperations) -> Result<(), TableError> {
         // make sure the columns are the same

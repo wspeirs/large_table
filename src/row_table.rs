@@ -14,7 +14,7 @@ use std::fmt::{Display, Formatter, Error as FmtError};
 use csv::{Reader, StringRecord, ByteRecord, ReaderBuilder, Trim};
 use rayon::prelude::*;
 
-use crate::{Table, TableOperations, TableSlice, TableError};
+use crate::{Table, TableOperations, TableSlice, TableError, ValueType};
 use crate::value::Value;
 use crate::row::{Row, RowSlice};
 
@@ -29,23 +29,17 @@ pub struct RowTableInner {
 #[derive(Debug, Clone)]
 pub struct RowTable(Rc<RefCell<RowTableInner>>);
 
-impl Table for RowTable {
+impl RowTable {
     /// Create a blank RowTable
-    fn new(columns :&[&str]) -> Self {
+    pub fn new(columns :&[&str]) -> Self {
         RowTable(Rc::new(RefCell::new(RowTableInner {
             columns: columns.into_iter().map(|s| String::from(*s)).collect::<Vec<_>>(),
             rows: Vec::new()
         })))
     }
 
-    fn update_by<F: FnMut(&mut Self::RowType)>(&mut self, mut update: F) {
-        for mut row in self.iter() {
-            update(&mut row);
-        }
-    }
-
     /// Read in a CSV file, and construct a RowTable
-    fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self, IOError> {
+    pub fn from_csv<P: AsRef<Path>>(path :P) -> Result<Self, IOError> {
 //        let mut csv = ReaderBuilder::new().trim(Trim::All).from_path(path)?;
         let mut csv = Reader::from_path(path)?;
 
@@ -72,6 +66,44 @@ impl Table for RowTable {
         rows.shrink_to_fit();
 
         Ok(RowTable(Rc::new(RefCell::new(RowTableInner { columns, rows }))))
+    }
+
+    pub fn from_csv_with_schema<P: AsRef<Path>>(path :P, schema :&[ValueType]) -> Result<Self, IOError> {
+        let mut csv = Reader::from_path(path)?;
+
+        // get the headers from the CSV file
+        let columns = csv.headers()?.iter().map(|h| String::from(h)).collect::<Vec<_>>();
+
+        if columns.iter().collect::<HashSet<_>>().len() != columns.len() {
+            return Err(IOError::new(ErrorKind::InvalidData, "Duplicate columns detected in the file"));
+        }
+
+        if columns.len() != schema.len() {
+            let err_str = format!("Column count and schema length do not match: {} != {}", columns.len(), schema.len());
+            return Err(IOError::new(ErrorKind::InvalidInput, err_str.as_str()));
+        }
+
+        let mut rows = Vec::new();
+        let mut record = StringRecord::new();
+
+        while csv.read_record(&mut record).map_err(|e| IOError::new(ErrorKind::Other, e))? {
+            let row = record.iter().enumerate().map(|(i, s)| Value::with_type(s, &schema[i])).collect::<Vec<_>>();
+
+            rows.push(row);
+        }
+
+        // shrink the vector down so we're not chewing up more memory than needed
+        rows.shrink_to_fit();
+
+        Ok(RowTable(Rc::new(RefCell::new(RowTableInner { columns, rows }))))
+    }
+}
+
+impl Table for RowTable {
+    fn update_by<F: FnMut(&mut Self::RowType)>(&mut self, mut update: F) {
+        for mut row in self.iter() {
+            update(&mut row);
+        }
     }
 
     fn append_row<R>(&mut self, row: R) -> Result<(), TableError>  where R: Row {

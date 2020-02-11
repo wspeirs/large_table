@@ -1,7 +1,8 @@
-use chrono::naive::{NaiveDateTime};
+use chrono::naive::{NaiveDateTime, NaiveDate, NaiveTime};
 use dtparse::parse;
 use ordered_float::OrderedFloat;
 use std::fmt::{Display, Formatter, Error as FmtError};
+use chrono::{Datelike, Timelike};
 
 
 /// Various types of values found in the cells of a [`Table`](trait.Table.html)
@@ -9,8 +10,22 @@ use std::fmt::{Display, Formatter, Error as FmtError};
 pub enum Value {
     String(String),
     DateTime(NaiveDateTime),
+    Date(NaiveDate),
+    Time(NaiveTime),
     Integer(i64),
     Float(OrderedFloat<f64>),
+    Empty
+}
+
+pub enum ValueType {
+    String,
+    DateTime,
+    DateTimeFormat(String),  // format for the DateTime
+    DateFormat(String),      // format for the Date
+    TimeFormat(String),      // format for the Time
+    Number,     // try to parse as Float first, then Integer
+    Integer,
+    Float,
     Empty
 }
 
@@ -43,7 +58,13 @@ impl Value {
 
         if dt_char_count.is_some() && dt_char_count.unwrap() > 0 {
             if let Ok((dt, _offset)) = parse(value) {
-                return Value::DateTime(dt);
+                if dt.year() == 0 {
+                    return Value::Time(dt.time());
+                } else if dt.hour() == 0 {
+                    return Value::Date(dt.date());
+                } else {
+                    return Value::DateTime(dt);
+                }
             }
         }
 
@@ -73,6 +94,29 @@ impl Value {
 
         // finally, just go with a string
         Value::String(String::from(value))
+    }
+
+    pub fn with_type(value :&str, value_type :&ValueType) -> Value {
+        match value_type {
+            ValueType::String => Value::String(value.to_string()),
+            ValueType::DateTime => {
+                let (dt, _offset) = dtparse::parse(value).unwrap();
+                Value::DateTime(dt)
+            },
+            ValueType::DateTimeFormat(format) => Value::DateTime(NaiveDateTime::parse_from_str(value, format).unwrap()),
+            ValueType::DateFormat(format) => Value::Date(NaiveDate::parse_from_str(value, format).unwrap()),
+            ValueType::TimeFormat(format) => Value::Time(NaiveTime::parse_from_str(value, format).unwrap()),
+            ValueType::Number => {
+                if let Ok(f) = value.parse::<f64>() {
+                    Value::Float(OrderedFloat(f))
+                } else {
+                    Value::Integer(value.parse::<i64>().unwrap())
+                }
+            },
+            ValueType::Integer => Value::Integer(value.parse::<i64>().unwrap()),
+            ValueType::Float => Value::Float(OrderedFloat(value.parse::<f64>().unwrap())),
+            ValueType::Empty => Value::Empty,
+        }
     }
 
     pub fn as_string(&self) -> Option<String> {
@@ -142,6 +186,8 @@ impl From<Value> for String {
         match value {
             Value::String(s) => String::from(s),
             Value::DateTime(dt) => format!("{}", dt),
+            Value::Date(d) => format!("{}", d),
+            Value::Time(t) => format!("{}", t),
             Value::Float(f) => format!("{}", f),
             Value::Integer(i) => format!("{}", i),
             Value::Empty => String::new(),
@@ -154,6 +200,8 @@ impl From<&Value> for String {
         match value {
             Value::String(s) => String::from(s),
             Value::DateTime(dt) => format!("{}", dt),
+            Value::Time(t) => format!("{}", t),
+            Value::Date(d) => format!("{}", d),
             Value::Float(f) => format!("{}", f),
             Value::Integer(i) => format!("{}", i),
             Value::Empty => String::new(),
@@ -166,6 +214,8 @@ impl Display for Value {
         match self {
             Value::String(s) => write!(f, "{}", s),
             Value::DateTime(d) => write!(f, "{}", d),
+            Value::Date(d) => write!(f, "{}", d),
+            Value::Time(t) => write!(f, "{}", t),
             Value::Integer(i) => write!(f, "{}", i),
             Value::Float(of) => write!(f, "{}", of),
             Value::Empty => write!(f, "")
