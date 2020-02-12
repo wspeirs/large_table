@@ -133,6 +133,8 @@ pub trait TableOperations {
 
     fn iter(&self) -> Self::Iter;
 
+    fn get(&self, index :usize) -> Result<Self::RowType, TableError>;
+
     fn columns(&self) -> Vec<String>;
 
     fn column_position(&self, column :&str) -> Result<usize, TableError> {

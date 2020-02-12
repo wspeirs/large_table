@@ -153,6 +153,19 @@ impl TableOperations for RowTable {
         }
     }
 
+    fn get(&self, index :usize) -> Result<Self::RowType, TableError> {
+        if index >= self.len() {
+            let err_str = format!("Index {} is beyond table length {}", index, self.len());
+            return Err(TableError::new(err_str.as_str()));
+        }
+
+        Ok(RowSlice {
+            column_map: Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
+            table: self.0.clone(),
+            row: index
+        })
+    }
+
     #[inline]
     fn columns(&self) -> Vec<String> {
         self.0.borrow().columns.clone()
@@ -342,6 +355,19 @@ impl TableOperations for RowTableSlice {
             table: self.table.clone(),
             cur_pos: 0
         }
+    }
+
+    fn get(&self, index :usize) -> Result<Self::RowType, TableError> {
+        if index >= self.len() {
+            let err_str = format!("Index {} is beyond table length {}", index, self.len());
+            return Err(TableError::new(err_str.as_str()));
+        }
+
+        Ok(RowSlice {
+            column_map: self.column_map.clone(),
+            table: self.table.clone(),
+            row: self.rows[index]
+        })
     }
 
     #[inline]
