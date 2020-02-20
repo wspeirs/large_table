@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
 use crate::value::Value;
@@ -13,8 +13,8 @@ use crate::Table;
 // playground for Row & Iterators: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=5b1ead8cdf0cbaac2941ec9e15a942d5
 
 pub struct RowSlice<T> {
-    pub(crate) column_map: Rc<Vec<(String, usize)>>,
-    pub(crate) table: Rc<RefCell<T>>,
+    pub(crate) column_map: Arc<Vec<(String, usize)>>,
+    pub(crate) table: Arc<Mutex<T>>,
     pub(crate) row: usize
 }
 

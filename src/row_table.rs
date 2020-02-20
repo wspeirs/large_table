@@ -5,9 +5,7 @@ use std::io::{Error as IOError, ErrorKind};
 use std::ops::Index;
 use std::collections::hash_map::RandomState;
 use std::iter::Map;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
 use std::fmt::{Display, Formatter, Error as FmtError};
 
 
@@ -25,14 +23,14 @@ pub struct RowTableInner {
     rows: Vec<Vec<Value>>
 }
 
-//https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=85a1c46e9e455bba144e442cdf0e57b3 - Rc<RefCell<>> Playground
+//https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=85a1c46e9e455bba144e442cdf0e57b3 - Arc<Mutex<>> Playground
 #[derive(Debug, Clone)]
-pub struct RowTable(Rc<RefCell<RowTableInner>>);
+pub struct RowTable(Arc<Mutex<RowTableInner>>);
 
 impl RowTable {
     /// Create a blank RowTable
     pub fn new(columns :&[&str]) -> Self {
-        RowTable(Rc::new(RefCell::new(RowTableInner {
+        RowTable(Arc::new(Mutex::new(RowTableInner {
             columns: columns.into_iter().map(|s| String::from(*s)).collect::<Vec<_>>(),
             rows: Vec::new()
         })))
@@ -65,7 +63,7 @@ impl RowTable {
         // shrink the vector down so we're not chewing up more memory than needed
         rows.shrink_to_fit();
 
-        Ok(RowTable(Rc::new(RefCell::new(RowTableInner { columns, rows }))))
+        Ok(RowTable(Arc::new(Mutex::new(RowTableInner { columns, rows }))))
     }
 
     pub fn from_csv_with_schema<P: AsRef<Path>>(path :P, schema :&[ValueType]) -> Result<Self, IOError> {
@@ -95,7 +93,7 @@ impl RowTable {
         // shrink the vector down so we're not chewing up more memory than needed
         rows.shrink_to_fit();
 
-        Ok(RowTable(Rc::new(RefCell::new(RowTableInner { columns, rows }))))
+        Ok(RowTable(Arc::new(Mutex::new(RowTableInner { columns, rows }))))
     }
 }
 
@@ -110,7 +108,7 @@ impl Table for RowTable {
         // go through each column, and get the corresponding column from the row
         let mut row_vec = Vec::new();
 
-        for column in self.0.borrow().columns.iter() {
+        for column in self.0.lock().unwrap().columns.iter() {
             let val = row.get(column);
 
             if let Err(e) = val {
@@ -120,7 +118,7 @@ impl Table for RowTable {
             row_vec.push(val.unwrap());
         }
 
-        Ok(self.0.borrow_mut().rows.push(row_vec))
+        Ok(Arc::get_mut(&mut self.0).unwrap().get_mut().unwrap().rows.push(row_vec))
     }
 
     fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, mut f :F) -> Result<(), TableError> {
@@ -131,10 +129,10 @@ impl Table for RowTable {
         }
 
         // add the column name to our list of columns
-        self.0.borrow_mut().columns.push(String::from(column_name));
+        Arc::get_mut(&mut self.0).unwrap().get_mut().unwrap().columns.push(String::from(column_name));
 
         // add the default value for the column
-        self.0.borrow_mut().rows.iter_mut().for_each(|row| row.push(f()));
+        Arc::get_mut(&mut self.0).unwrap().get_mut().unwrap().rows.iter_mut().for_each(|row| row.push(f()));
 
         Ok( () )
     }
@@ -148,7 +146,7 @@ impl TableOperations for RowTable {
     fn iter(&self) -> RowTableIter {
         RowTableIter {
             table: self.0.clone(),
-            column_map: Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
+            column_map: Arc::new(self.0.lock().unwrap().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
             cur_pos: 0
         }
     }
@@ -160,7 +158,7 @@ impl TableOperations for RowTable {
         }
 
         Ok(RowSlice {
-            column_map: Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
+            column_map: Arc::new(self.0.lock().unwrap().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
             table: self.0.clone(),
             row: index
         })
@@ -168,7 +166,7 @@ impl TableOperations for RowTable {
 
     #[inline]
     fn columns(&self) -> Vec<String> {
-        self.0.borrow().columns.clone()
+        self.0.lock().unwrap().columns.clone()
     }
 
     fn group_by(&self, column: &str) -> Result<HashMap<Value, RowTableSlice>, TableError> {
@@ -178,7 +176,7 @@ impl TableOperations for RowTable {
         let mut row_map = HashMap::new();
 
         // go through each row, and add them to our result
-        for (i, row) in self.0.borrow().rows.iter().enumerate() {
+        for (i, row) in self.0.lock().unwrap().rows.iter().enumerate() {
             // get the slice, or create a new one
             let slice = row_map.entry(row[pos].clone()).or_insert(Vec::new());
 
@@ -186,11 +184,11 @@ impl TableOperations for RowTable {
             slice.push(i);
         }
 
-        let column_map :Rc<Vec<(String, usize)>> = Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect());
+        let column_map :Arc<Vec<(String, usize)>> = Arc::new(self.0.lock().unwrap().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect());
 
         Ok(row_map.into_iter().map(|(k, v)| (k, RowTableSlice {
             column_map: column_map.clone(),
-            rows: Rc::new(v),
+            rows: Arc::new(v),
             table: self.0.clone()
         })).collect())
     }
@@ -205,18 +203,18 @@ impl TableOperations for RowTable {
         }
 
         Ok(RowTableSlice {
-            column_map: Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
-            rows: Rc::new(slice_rows),
+            column_map: Arc::new(self.0.lock().unwrap().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
+            rows: Arc::new(slice_rows),
             table: self.0.clone()
         })
     }
 
 //    fn sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, mut compare: F) -> Result<RowTableSlice, TableError> {
-//        let column_map :Rc<HashMap<String, usize>> = Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i,s)| (s.clone(), i)).collect());
+//        let column_map :Arc<HashMap<String, usize>> = Arc::new(self.0.lock().unwrap().columns.iter().enumerate().map(|(i,s)| (s.clone(), i)).collect());
 //
 //        let slice = RowTableSlice {
 //            column_map,
-//            rows: Rc::new((0..self.len()).collect()),
+//            rows: Arc::new((0..self.len()).collect()),
 //            table: self.0.clone()
 //        };
 //
@@ -224,11 +222,11 @@ impl TableOperations for RowTable {
 //    }
 //
 //    fn stable_sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, mut compare: F) -> Result<Self::TableSliceType, TableError> {
-//        let column_map :Rc<HashMap<String, usize>> = Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i,s)| (s.clone(), i)).collect());
+//        let column_map :Arc<HashMap<String, usize>> = Arc::new(self.0.lock().unwrap().columns.iter().enumerate().map(|(i,s)| (s.clone(), i)).collect());
 //
 //        let slice = RowTableSlice {
 //            column_map,
-//            rows: Rc::new((0..self.len()).collect()),
+//            rows: Arc::new((0..self.len()).collect()),
 //            table: self.0.clone()
 //        };
 //
@@ -236,20 +234,20 @@ impl TableOperations for RowTable {
 //    }
 
     fn split_rows_at(&self, mid: usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError> {
-        if mid >= self.0.borrow().rows.len() {
-            let err_str = format!("Midpoint too large: {} >= {}", mid, self.0.borrow().rows.len());
+        if mid >= self.0.lock().unwrap().rows.len() {
+            let err_str = format!("Midpoint too large: {} >= {}", mid, self.0.lock().unwrap().rows.len());
             return Err(TableError::new(err_str.as_str()));
         }
 
         Ok( (
             RowTableSlice {
-                column_map: Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
-                rows: Rc::new((0..mid).collect::<Vec<_>>()),
+                column_map: Arc::new(self.0.lock().unwrap().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
+                rows: Arc::new((0..mid).collect::<Vec<_>>()),
                 table: self.0.clone()
             },
             RowTableSlice {
-                column_map: Rc::new(self.0.borrow().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
-                rows: Rc::new((mid..self.0.borrow().rows.len()).collect::<Vec<_>>()),
+                column_map: Arc::new(self.0.lock().unwrap().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
+                rows: Arc::new((mid..self.0.lock().unwrap().rows.len()).collect::<Vec<_>>()),
                 table: self.0.clone()
             }
             )
@@ -269,7 +267,7 @@ impl Row for RowSlice<RowTableInner> {
 
         let pos = self.column_map[pos.unwrap()].1;
 
-        let row = &self.table.borrow().rows[self.row];
+        let row = &self.table.lock().unwrap().rows[self.row];
 
         Ok(row[pos].clone())
     }
@@ -282,7 +280,7 @@ impl Row for RowSlice<RowTableInner> {
 impl Display for RowSlice<RowTableInner> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         // TODO: Fix this
-        write!(f, "{:?}", self.table.borrow().rows[self.row])
+        write!(f, "{:?}", self.table.lock().unwrap().rows[self.row])
     }
 }
 
@@ -292,8 +290,8 @@ impl Display for RowSlice<RowTableInner> {
 
 /// `Iterator` for rows in a table.
 pub struct RowTableIter {
-    table: Rc<RefCell<RowTableInner>>,
-    column_map: Rc<Vec<(String, usize)>>,
+    table: Arc<Mutex<RowTableInner>>,
+    column_map: Arc<Vec<(String, usize)>>,
     cur_pos: usize
 }
 
@@ -301,7 +299,7 @@ impl Iterator for RowTableIter {
     type Item=RowSlice<RowTableInner>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.cur_pos >= self.table.borrow().rows.len() {
+        if self.cur_pos >= self.table.lock().unwrap().rows.len() {
             None
         } else {
             self.cur_pos += 1;
@@ -319,23 +317,23 @@ impl Iterator for RowTableIter {
 //    type IntoIter=RowTableIntoIter;
 //
 //    fn into_iter(self) -> Self::IntoIter {
-//        let columns = self.0.borrow().columns.clone();
+//        let columns = self.0.lock().unwrap().columns.clone();
 //
-//        RowTableIntoIter{ columns: Arc::new(columns), iter: self.0.borrow().rows.into_iter() }
+//        RowTableIntoIter{ columns: Arc::new(columns), iter: self.0.lock().unwrap().rows.into_iter() }
 //    }
 //}
 
 #[derive(Clone)]
 pub struct RowTableSlice {
-    column_map: Rc<Vec<(String, usize)>>,   // mapping of column names to row offsets
-    rows: Rc<Vec<usize>>,                   // index of the corresponding row in the Table
-    table: Rc<RefCell<RowTableInner>>       // reference to the underlying table
+    column_map: Arc<Vec<(String, usize)>>,   // mapping of column names to row offsets
+    rows: Arc<Vec<usize>>,                   // index of the corresponding row in the Table
+    table: Arc<Mutex<RowTableInner>>       // reference to the underlying table
 }
 
 impl Display for RowTableSlice {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         for row in self.rows.iter() {
-            writeln!(f, "{:?}", self.table.borrow().rows[*row]);
+            writeln!(f, "{:?}", self.table.lock().unwrap().rows[*row]);
         }
 
         Ok( () )
@@ -394,7 +392,7 @@ impl TableOperations for RowTableSlice {
         Ok(RowTableSlice {
             column_map: self.column_map.clone(),
             table: self.table.clone(),
-            rows: Rc::new(slice_rows),
+            rows: Arc::new(slice_rows),
         })
     }
 
@@ -405,8 +403,8 @@ impl TableOperations for RowTableSlice {
         }
 
         Ok( (
-            RowTableSlice { column_map: self.column_map.clone(), rows: Rc::new((0..mid).collect()), table: self.table.clone() },
-            RowTableSlice { column_map: self.column_map.clone(), rows: Rc::new((mid..self.rows.len()).collect()), table: self.table.clone() }
+            RowTableSlice { column_map: self.column_map.clone(), rows: Arc::new((0..mid).collect()), table: self.table.clone() },
+            RowTableSlice { column_map: self.column_map.clone(), rows: Arc::new((mid..self.rows.len()).collect()), table: self.table.clone() }
             )
         )
     }
@@ -425,7 +423,7 @@ impl TableSlice for RowTableSlice {
 
         Ok(RowTableSlice {
             column_map: self.column_map.clone(),
-            rows: Rc::new(rows),
+            rows: Arc::new(rows),
             table: self.table.clone()
         })
     }
@@ -436,8 +434,8 @@ impl TableSlice for RowTableSlice {
 //        let table = self.table.clone();
 //
 //        Ok(self.rows.sort_by(|a, b| {
-//            let a_row = RowSlice<RowTableInner> { columns: &columns, row: &table.borrow().rows[*a] };
-//            let b_row = RowSlice<RowTableInner> { columns: &columns, row: &table.borrow().rows[*b] };
+//            let a_row = RowSlice<RowTableInner> { columns: &columns, row: &table.lock().unwrap().rows[*a] };
+//            let b_row = RowSlice<RowTableInner> { columns: &columns, row: &table.lock().unwrap().rows[*b] };
 //
 //            compare(a_row, b_row)
 //        }))
@@ -447,9 +445,9 @@ impl TableSlice for RowTableSlice {
 
 /// Reference `Iterator` for rows in a table.
 pub struct RowTableSliceIter {
-    column_map: Rc<Vec<(String, usize)>>,
-    rows: Rc<Vec<usize>>,
-    table: Rc<RefCell<RowTableInner>>,
+    column_map: Arc<Vec<(String, usize)>>,
+    rows: Arc<Vec<usize>>,
+    table: Arc<Mutex<RowTableInner>>,
     cur_pos: usize
 }
 
