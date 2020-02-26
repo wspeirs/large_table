@@ -19,6 +19,7 @@ mod value;
 mod row;
 mod table_error;
 mod row_table;
+mod mmap_table;
 
 // expose some of the underlying structures from other files
 //pub use crate::row_table::RowTable;
