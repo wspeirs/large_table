@@ -1,5 +1,5 @@
 [package]
-name = "mem_table"
+name = "large_table"
 version = "0.1.0"
 authors = ["William Speirs <bill.speirs@gmail.com>"]
 edition = "2018"
