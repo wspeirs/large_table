@@ -1,4 +1,4 @@
-use mem_table::Value;
+use large_table::Value;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 

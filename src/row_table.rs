@@ -29,9 +29,9 @@ pub struct RowTable(Arc<Mutex<RowTableInner>>);
 
 impl RowTable {
     /// Create a blank RowTable
-    pub fn new(columns :&[&str]) -> Self {
+    pub fn new<S: ToString>(columns :&[S]) -> Self {
         RowTable(Arc::new(Mutex::new(RowTableInner {
-            columns: columns.into_iter().map(|s| String::from(*s)).collect::<Vec<_>>(),
+            columns: columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
             rows: Vec::new()
         })))
     }
@@ -371,10 +371,6 @@ impl TableOperations for RowTableSlice {
     #[inline]
     fn columns(&self) -> Vec<String> {
         self.column_map.iter().map(|(c,i)| c.clone()).collect()
-    }
-
-    fn group_by(&self, column: &str) -> Result<HashMap<Value, RowTableSlice>, TableError> {
-        unimplemented!();
     }
 
     fn find_by<P: FnMut(&RowSlice<RowTableInner>) -> bool>(&self, mut predicate: P) -> Result<RowTableSlice, TableError> {

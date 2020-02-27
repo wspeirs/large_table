@@ -171,7 +171,17 @@ pub trait TableOperations {
         Ok( () )
     }
 
-    fn group_by(&self, column :&str) -> Result<HashMap<Value, Self::TableSliceType>, TableError>;
+    fn group_by(&self, column :&str) -> Result<HashMap<Value, Self::TableSliceType>, TableError> {
+        // TODO: make sure the column name is valid
+        let col_vals = self.unique(column)?;
+        let mut ret = HashMap::with_capacity(col_vals.len());
+
+        for val in col_vals {
+            ret.insert(val.clone(), self.find(column, &val)?);
+        }
+
+        Ok(ret)
+    }
 
     fn unique(&self, column :&str) -> Result<HashSet<Value>, TableError>  {
         //TODO: make sure the column name is valid

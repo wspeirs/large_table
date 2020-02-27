@@ -103,7 +103,7 @@ impl Value {
                 let (dt, _offset) = dtparse::parse(value).unwrap();
                 Value::DateTime(dt)
             },
-            ValueType::DateTimeFormat(format) => Value::DateTime(NaiveDateTime::parse_from_str(value, format).unwrap()),
+            ValueType::DateTimeFormat(format) => Value::DateTime(NaiveDateTime::parse_from_str(value, format).expect(format!("Error parsing DateTime: {} using {}", value, format).as_str())),
             ValueType::DateFormat(format) => Value::Date(NaiveDate::parse_from_str(value, format).unwrap()),
             ValueType::TimeFormat(format) => Value::Time(NaiveTime::parse_from_str(value, format).unwrap()),
             ValueType::Number => {
@@ -123,7 +123,7 @@ impl Value {
          if let Value::String(s) = self {
              Some(s.clone())
          } else {
-             None
+             Some(self.to_string())
          }
     }
 
