@@ -20,7 +20,12 @@ pub struct RowSlice<T> {
 
 /// Operations that you can perform on a Row
 pub trait Row {
-    fn get(&self, column :&str) -> Result<Value, TableError>;
+    fn get(&self, column :&str) -> Value {
+        self.get_checked(column).unwrap()
+    }
+
+    fn get_checked(&self, column :&str) -> Result<Value, TableError>;
+
     fn set(&mut self, column :&str, value :Value) -> Result<Value, TableError> {
         unimplemented!()
     }
@@ -32,3 +37,4 @@ pub trait Row {
 
     fn columns(&self) -> Vec<String>;
 }
+

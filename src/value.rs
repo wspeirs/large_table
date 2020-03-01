@@ -119,15 +119,15 @@ impl Value {
         }
     }
 
-    pub fn as_string(&self) -> Option<String> {
+    pub fn as_string(&self) -> String {
          if let Value::String(s) = self {
-             Some(s.clone())
+             s.clone()
          } else {
-             Some(self.to_string())
+             self.to_string()
          }
     }
 
-    pub fn as_date_time(&self) -> Option<NaiveDateTime> {
+    pub fn try_as_date_time(&self) -> Option<NaiveDateTime> {
         if let Value::DateTime(dt) = self {
             Some(dt.clone())
         } else {
@@ -135,7 +135,35 @@ impl Value {
         }
     }
 
-    pub fn as_integer(&self) -> Option<i64> {
+    pub fn as_date_time(&self) -> NaiveDateTime {
+        self.try_as_date_time().unwrap()
+    }
+
+    pub fn try_as_date(&self) -> Option<NaiveDate> {
+        if let Value::Date(d) = self {
+            Some(d.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_date(&self) -> NaiveDate {
+        self.try_as_date().unwrap()
+    }
+
+    pub fn try_as_time(&self) -> Option<NaiveTime> {
+        if let Value::Time(t) = self {
+            Some(t.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_time(&self) -> NaiveTime {
+        self.try_as_time().unwrap()
+    }
+
+    pub fn try_as_integer(&self) -> Option<i64> {
         match self {
             Value::Integer(i) => Some(*i),
             Value::Float(f) => Some(f.0 as i64),
@@ -143,7 +171,11 @@ impl Value {
         }
     }
 
-    pub fn as_float(&self) -> Option<f64> {
+    pub fn as_integer(&self) -> i64 {
+        self.try_as_integer().unwrap()
+    }
+
+    pub fn try_as_float(&self) -> Option<f64> {
         match self {
             Value::Integer(i) => Some(*i as f64),
             Value::Float(f) => Some(f.0),
@@ -151,34 +183,10 @@ impl Value {
         }
     }
 
-    pub fn old(value :&str) -> Value {
-        // first check to see if it's empty
-        if value.is_empty() {
-            return Value::Empty;
-        }
-
-        // next attempt to parse as a DateTime
-        if value.find(|c| c == '-' || c == '/' || c == ':').is_some() {
-            if let Ok((dt, _offset)) = parse(value) {
-                return Value::DateTime(dt);
-            }
-        }
-
-        // next attempt to parse as a float
-        if value.contains(".") {
-            if let Ok(f) = value.parse::<f64>() {
-                return Value::Float(OrderedFloat(f));
-            }
-        }
-
-        // next as an integer
-        if let Ok(i) = value.parse::<i64>() {
-            return Value::Integer(i);
-        }
-
-        // finally, just go with a string
-        Value::String(String::from(value))
+    pub fn as_float(&self) -> f64 {
+        self.try_as_float().unwrap()
     }
+
 }
 
 impl From<Value> for String {

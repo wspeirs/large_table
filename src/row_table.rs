@@ -257,7 +257,7 @@ impl TableOperations for RowTable {
 
 
 impl Row for RowSlice<RowTableInner> {
-    fn get(&self, column: &str) -> Result<Value, TableError> {
+    fn get_checked(&self, column: &str) -> Result<Value, TableError> {
         let pos = self.column_map.iter().position(|(c, i)| c == column);
 
         if pos.is_none() {
