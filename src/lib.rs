@@ -188,7 +188,7 @@ pub trait TableOperations {
 
         // insert the values into the HashSet
         // TODO: use Rayon to make this go in parallel
-        Ok(self.iter().map(|row| row.get(column).unwrap().clone()).collect::<HashSet<_>>())
+        Ok(self.iter().map(|row| row.get(column).clone()).collect::<HashSet<_>>())
     }
 
     /// Returns a `TableSlice` with all rows that where `value` matches in the `column`.
@@ -196,7 +196,7 @@ pub trait TableOperations {
         // get the position in the underlying table
         let pos = self.column_position(column)?;
 
-        self.find_by(|row| row.get(column).unwrap() == *value)
+        self.find_by(|row| row.get(column) == *value)
     }
 
     fn find_by<P: FnMut(&Self::RowType) -> bool>(&self, predicate :P) -> Result<Self::TableSliceType, TableError>;
@@ -233,7 +233,7 @@ pub trait TableSlice: TableOperations {
             let mut ret = Ordering::Equal;
 
             for col in columns {
-                ret = a.get(*col).unwrap().cmp(&b.get(*col).unwrap());
+                ret = a.get(*col).cmp(&b.get(*col));
 
                 if ret != Ordering::Equal {
                     return ret;

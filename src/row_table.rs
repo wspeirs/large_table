@@ -109,7 +109,7 @@ impl Table for RowTable {
         let mut row_vec = Vec::new();
 
         for column in self.0.lock().unwrap().columns.iter() {
-            let val = row.get(column);
+            let val = row.get_checked(column);
 
             if let Err(e) = val {
                 return Err(e);

@@ -127,8 +127,20 @@ impl TableOperations for MMapTable {
         unimplemented!()
     }
 
-    fn find_by<P: FnMut(&Self::RowType) -> bool>(&self, predicate: P) -> Result<Self::TableSliceType, TableError> {
-        unimplemented!()
+    fn find_by<P: FnMut(&Self::RowType) -> bool>(&self, mut predicate: P) -> Result<Self::TableSliceType, TableError> {
+        let mut slice_rows = Vec::new();
+
+        for (i, row) in self.iter().enumerate() {
+            if predicate(&row) {
+                slice_rows.push(i);
+            }
+        }
+
+        Ok(MMapTableSlice {
+            column_map: Arc::new(self.0.lock().unwrap().columns.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect()),
+            rows: Arc::new(slice_rows),
+            table: self.0.clone()
+        })
     }
 
     fn split_rows_at(&self, mid: usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError> {
@@ -162,8 +174,39 @@ impl Iterator for MMapTableIter {
 }
 
 impl Row for RowSlice<MMapTableInner> {
-    fn get(&self, column: &str) -> Result<Value, TableError> {
-        unimplemented!()
+    fn get_checked(&self, column: &str) -> Result<Value, TableError> {
+        let pos = self.column_map.iter().position(|(c, i)| c == column);
+
+        if pos.is_none() {
+            let err_str = format!("Could not find column in RowSlice: {}", column);
+            return Err(TableError::new(err_str.as_str()));
+        }
+
+        let pos = self.column_map[pos.unwrap()].1;
+
+        // get the offset into the file
+        let table = self.table.lock().unwrap();
+        let offset = table.rows[self.row];
+
+        // parse the row
+        let mut reader = CsvCoreReader::new();
+        let mut output = [0u8; 1024*1024];
+        let mut ends = [0usize; 100];
+
+        let (res, read, written, num_ends) = reader.read_record(&table.mmap[offset..], &mut output, &mut ends);
+
+        if let ReadRecordResult::Record = res {
+            let (s, e) = if pos == 0 {
+                (0, ends[0])
+            } else {
+                (ends[pos-1], ends[pos])
+            };
+
+            Ok(Value::new(String::from_utf8(output[s..e].to_vec()).unwrap().as_str()))
+        } else {
+            let err_str = format!("Could not parse column {}: {:?}", column, res);
+            Err(TableError::new(err_str.as_str()))
+        }
     }
 
     fn columns(&self) -> Vec<String> {
