@@ -109,7 +109,7 @@ impl Table for RowTable {
         let mut row_vec = Vec::new();
 
         for column in self.0.lock().unwrap().columns.iter() {
-            let val = row.get_checked(column);
+            let val = row.try_get(column);
 
             if let Err(e) = val {
                 return Err(e);
@@ -133,6 +133,14 @@ impl Table for RowTable {
 
         // add the default value for the column
         Arc::get_mut(&mut self.0).unwrap().get_mut().unwrap().rows.iter_mut().for_each(|row| row.push(f()));
+
+        Ok( () )
+    }
+
+    fn rename_column(&mut self, old_col :&str, new_col :&str) -> Result<(), TableError> {
+        let pos = self.column_position(old_col)?;
+
+        self.0.lock().unwrap().columns[pos] = new_col.to_string();
 
         Ok( () )
     }
@@ -257,7 +265,7 @@ impl TableOperations for RowTable {
 
 
 impl Row for RowSlice<RowTableInner> {
-    fn get_checked(&self, column: &str) -> Result<Value, TableError> {
+    fn try_get(&self, column: &str) -> Result<Value, TableError> {
         let pos = self.column_map.iter().position(|(c, i)| c == column);
 
         if pos.is_none() {
@@ -436,6 +444,28 @@ impl TableSlice for RowTableSlice {
 //            compare(a_row, b_row)
 //        }))
 //    }
+
+    fn rename_column(&self, old_col: &str, new_col: &str) -> Result<Self::TableSliceType, TableError> {
+        let pos = TableSlice::column_position(self, old_col)?;
+
+        let new_val = (new_col.to_string(), self.column_map[pos].1);
+
+        let mut new_column_map = Vec::with_capacity(self.column_map.len());
+
+        for i in 0..self.column_map.len() {
+            if i == pos {
+                new_column_map.push((new_col.to_string(), self.column_map[i].1));
+            } else {
+                new_column_map.push(self.column_map[i].clone());
+            }
+        }
+
+        Ok( RowTableSlice {
+            column_map: Arc::new(new_column_map),
+            rows: self.rows.clone(),
+            table: self.table.clone()
+        })
+    }
 
 }
 

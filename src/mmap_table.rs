@@ -92,6 +92,10 @@ impl Table for MMapTable {
     fn add_column_with<F: FnMut() -> Value>(&mut self, column_name: &str, f: F) -> Result<(), TableError> {
         unimplemented!("You can only modify the contents of memory-mapped table, not change it's size")
     }
+
+    fn rename_column(&mut self, old_col :&str, new_col :&str) -> Result<(), TableError> {
+        unimplemented!()
+    }
 }
 
 impl TableOperations for MMapTable {
@@ -174,7 +178,7 @@ impl Iterator for MMapTableIter {
 }
 
 impl Row for RowSlice<MMapTableInner> {
-    fn get_checked(&self, column: &str) -> Result<Value, TableError> {
+    fn try_get(&self, column: &str) -> Result<Value, TableError> {
         let pos = self.column_map.iter().position(|(c, i)| c == column);
 
         if pos.is_none() {
@@ -281,6 +285,10 @@ impl TableOperations for MMapTableSlice {
 
 impl TableSlice for MMapTableSlice {
     fn sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, compare: F) -> Result<Self::TableSliceType, TableError> {
+        unimplemented!()
+    }
+
+    fn rename_column(&self, old_col :&str, new_col :&str) -> Result<Self::TableSliceType, TableError> {
         unimplemented!()
     }
 }

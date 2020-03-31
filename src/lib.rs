@@ -61,6 +61,9 @@ pub trait Table: TableOperations {
     /// This method works a row-at-a-time and therefore can be slower than `add_column`.
     fn add_column_with<F: FnMut() -> Value>(&mut self, column_name :&str, f :F) -> Result<(), TableError>;
 
+    fn rename_column(&mut self, old_col :&str, new_col :&str) -> Result<(), TableError>;
+
+
 //    /// Sorts the rows in the table, in an unstable way, in ascending order, by the columns provided, in the order they're provided.
 //    ///
 //    /// If the columns passed are `A`, `B`, `C`, then the rows will be sored by column `A` first, then `B`, then `C`.
@@ -158,7 +161,7 @@ pub trait TableOperations {
     }
 
     /// Write a table out to a CSV file
-    fn to_csv(&self, csv_path :&Path) -> Result<(), TableError> {
+    fn to_csv<P: AsRef<Path>>(&self, csv_path :P) -> Result<(), TableError> {
         let mut csv = Writer::from_path(csv_path).map_err(|e| TableError::new(e.to_string().as_str()))?;
 
         // write out the headers first
@@ -166,7 +169,9 @@ pub trait TableOperations {
 
         // go through each row, writing the records converted to Strings
         for row in self.iter() {
-//            csv.write_record(row.iter().map(|f| String::from(f)));
+            csv.write_record(self.columns().iter().map(|c| {
+                row.get(c).as_string()
+            }));
         }
 
         Ok( () )
@@ -215,6 +220,8 @@ pub trait TableSlice: TableOperations {
 
         TableOperations::column_position(self, column)
     }
+
+    fn rename_column(&self, old_col :&str, new_col :&str) -> Result<Self::TableSliceType, TableError>;
 
     /// Sorts the rows in the table, in an unstable way, in ascending order, by the columns provided, in the order they're provided.
     ///
