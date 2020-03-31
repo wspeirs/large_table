@@ -27,6 +27,7 @@ pub use crate::value::{Value, ValueType};
 pub use crate::table_error::TableError;
 pub use crate::row::{Row, RowSlice};
 pub use crate::row_table::{RowTable, RowTableSlice};
+pub use crate::mmap_table::{MMapTable, MMapTableSlice};
 
 // Playground: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=98ca951a70269d44cb48230359857f60
 

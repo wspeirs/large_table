@@ -41,7 +41,7 @@ impl MMapTable {
 
             let (res, read, written, num_ends) = reader.read_record(&mmap[pos..], &mut output, &mut ends);
 
-            println!("POS: {} RES: {:?} READ: {} WRITTEN: {} NUM_ENDS: {}", pos, res, read, written, num_ends);
+//            println!("POS: {} RES: {:?} READ: {} WRITTEN: {} NUM_ENDS: {}", pos, res, read, written, num_ends);
 
             if let ReadRecordResult::End = res {
                 break;
@@ -55,8 +55,9 @@ impl MMapTable {
         }
 
         rows.pop();
+        rows.shrink_to_fit();
 
-        println!("ROWS: {}", rows.len());
+//        println!("ROWS: {}", rows.len());
 
         let mut header_buffer = vec![0u8; rows[1]];
 
@@ -159,17 +160,16 @@ impl Iterator for MMapTableIter {
     type Item=RowSlice<MMapTableInner>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        None
-        // if self.cur_pos >= self.table.lock().unwrap().rows.len() {
-        //     None
-        // } else {
-        //     self.cur_pos += 1;
-        //     Some(RowSlice {
-        //         table: self.table.clone(),
-        //         column_map: self.column_map.clone(),
-        //         row: self.cur_pos-1
-        //     })
-        // }
+         if self.cur_pos >= self.table.lock().unwrap().rows.len() {
+             None
+         } else {
+             self.cur_pos += 1;
+             Some(RowSlice {
+                 table: self.table.clone(),
+                 column_map: self.column_map.clone(),
+                 row: self.cur_pos-1
+             })
+         }
     }
 }
 
@@ -226,23 +226,52 @@ impl TableOperations for MMapTableSlice {
     type Iter = MMapTableSliceIter;
 
     fn iter(&self) -> Self::Iter {
-        unimplemented!()
+        MMapTableSliceIter {
+            column_map: self.column_map.clone(),
+            rows: self.rows.clone(),
+            table: self.table.clone(),
+            cur_pos: 0
+        }
     }
 
     fn get(&self, index: usize) -> Result<Self::RowType, TableError> {
-        unimplemented!()
+        if index >= self.len() {
+            let err_str = format!("Index {} is beyond table length {}", index, self.len());
+            return Err(TableError::new(err_str.as_str()));
+        }
+
+        Ok(RowSlice {
+            column_map: self.column_map.clone(),
+            table: self.table.clone(),
+            row: self.rows[index]
+        })
     }
 
     fn columns(&self) -> Vec<String> {
-        unimplemented!()
+        self.column_map.iter().map(|(c,i)| c.clone()).collect()
     }
 
     fn group_by(&self, column: &str) -> Result<HashMap<Value, Self::TableSliceType, RandomState>, TableError> {
         unimplemented!()
     }
 
-    fn find_by<P: FnMut(&Self::RowType) -> bool>(&self, predicate: P) -> Result<Self::TableSliceType, TableError> {
-        unimplemented!()
+    fn find_by<P: FnMut(&Self::RowType) -> bool>(&self, mut predicate: P) -> Result<Self::TableSliceType, TableError> {
+        let mut slice_rows = Vec::new();
+
+        for &row_index in self.rows.iter() {
+            let row = RowSlice { column_map: self.column_map.clone(), table: self.table.clone(), row: row_index };
+
+            // run the predicate against the row
+            if predicate(&row) {
+                slice_rows.push(row_index);
+            }
+        }
+
+        Ok(MMapTableSlice {
+            column_map: self.column_map.clone(),
+            table: self.table.clone(),
+            rows: Arc::new(slice_rows),
+        })
     }
 
     fn split_rows_at(&self, mid: usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError> {
