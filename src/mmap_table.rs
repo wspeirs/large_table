@@ -132,7 +132,7 @@ impl TableOperations for MMapTable {
         unimplemented!()
     }
 
-    fn find_by<P: FnMut(&Self::RowType) -> bool>(&self, mut predicate: P) -> Result<Self::TableSliceType, TableError> {
+    fn filter_by<P: FnMut(&Self::RowType) -> bool>(&self, mut predicate: P) -> Result<Self::TableSliceType, TableError> {
         let mut slice_rows = Vec::new();
 
         for (i, row) in self.iter().enumerate() {
@@ -259,7 +259,7 @@ impl TableOperations for MMapTableSlice {
         unimplemented!()
     }
 
-    fn find_by<P: FnMut(&Self::RowType) -> bool>(&self, mut predicate: P) -> Result<Self::TableSliceType, TableError> {
+    fn filter_by<P: FnMut(&Self::RowType) -> bool>(&self, mut predicate: P) -> Result<Self::TableSliceType, TableError> {
         let mut slice_rows = Vec::new();
 
         for &row_index in self.rows.iter() {
