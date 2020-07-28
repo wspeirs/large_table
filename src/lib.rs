@@ -183,12 +183,13 @@ pub trait TableOperations {
         let mut ret = HashMap::with_capacity(col_vals.len());
 
         for val in col_vals {
-            ret.insert(val.clone(), self.find(column, &val)?);
+            ret.insert(val.clone(), self.filter(column, &val)?);
         }
 
         Ok(ret)
     }
 
+    /// Get a set of unique values for a given column
     fn unique(&self, column :&str) -> Result<HashSet<Value>, TableError>  {
         //TODO: make sure the column name is valid
 
@@ -198,14 +199,14 @@ pub trait TableOperations {
     }
 
     /// Returns a `TableSlice` with all rows that where `value` matches in the `column`.
-    fn find(&self, column :&str, value :&Value) -> Result<Self::TableSliceType, TableError> {
+    fn filter(&self, column :&str, value :&Value) -> Result<Self::TableSliceType, TableError> {
         // get the position in the underlying table
         let pos = self.column_position(column)?;
 
-        self.find_by(|row| row.get(column) == *value)
+        self.filter_by(|row| row.get(column) == *value)
     }
 
-    fn find_by<P: FnMut(&Self::RowType) -> bool>(&self, predicate :P) -> Result<Self::TableSliceType, TableError>;
+    fn filter_by<P: FnMut(&Self::RowType) -> bool>(&self, predicate :P) -> Result<Self::TableSliceType, TableError>;
 
     fn split_rows_at(&self, mid :usize) -> Result<(Self::TableSliceType, Self::TableSliceType), TableError>;
 }

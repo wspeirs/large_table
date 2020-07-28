@@ -17,6 +17,7 @@ pub enum Value {
     Empty
 }
 
+#[derive(Debug, Clone)]
 pub enum ValueType {
     String,
     DateTime,
@@ -110,11 +111,15 @@ impl Value {
                 if let Ok(f) = value.parse::<f64>() {
                     Value::Float(OrderedFloat(f))
                 } else {
-                    Value::Integer(value.parse::<i64>().unwrap())
+                    if let Ok(i) = value.parse::<i64>() {
+                        Value::Integer(i)
+                    } else {
+                        panic!("Error parsing number: {}", value);
+                    }
                 }
             },
-            ValueType::Integer => Value::Integer(value.parse::<i64>().unwrap()),
-            ValueType::Float => Value::Float(OrderedFloat(value.parse::<f64>().unwrap())),
+            ValueType::Integer => Value::Integer(value.parse::<i64>().expect(format!("Error parsing integer: {}", value).as_str())),
+            ValueType::Float => Value::Float(OrderedFloat(value.parse::<f64>().unwrap_or_default())),
             ValueType::Empty => Value::Empty,
         }
     }

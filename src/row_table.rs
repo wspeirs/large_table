@@ -201,7 +201,7 @@ impl TableOperations for RowTable {
         })).collect())
     }
 
-    fn find_by<P: FnMut(&RowSlice<RowTableInner>) -> bool>(&self, mut predicate :P) -> Result<RowTableSlice, TableError> {
+    fn filter_by<P: FnMut(&RowSlice<RowTableInner>) -> bool>(&self, mut predicate :P) -> Result<RowTableSlice, TableError> {
         let mut slice_rows = Vec::new();
 
         for (i, row) in self.iter().enumerate() {
@@ -381,7 +381,7 @@ impl TableOperations for RowTableSlice {
         self.column_map.iter().map(|(c,i)| c.clone()).collect()
     }
 
-    fn find_by<P: FnMut(&RowSlice<RowTableInner>) -> bool>(&self, mut predicate: P) -> Result<RowTableSlice, TableError> {
+    fn filter_by<P: FnMut(&RowSlice<RowTableInner>) -> bool>(&self, mut predicate: P) -> Result<RowTableSlice, TableError> {
         let mut slice_rows = Vec::new();
 
         for &row_index in self.rows.iter() {
@@ -501,7 +501,7 @@ mod tests {
     fn to_from_csv() {
         let mut table :RowTable = RowTable::new(&["B"]);
 
-        table.find_by(|r| { r.get("B"); true });
+        table.filter_by(|r| { r.get("B"); true });
 //        table.find_by(|r| { r.set("B", Value::Integer(7)); true });
         table.update_by(|r| { r.set("B", Value::Integer(7));} );
     }
