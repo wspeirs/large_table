@@ -9,20 +9,36 @@ use std::cmp::Ordering;
 use memmap::{MmapMut, MmapOptions};
 use csv_core::{Reader as CsvCoreReader, ReadRecordResult};
 use csv::Reader;
+use rayon::prelude::*;
 
-use crate::{Table, TableOperations, Value, TableError, Row, RowSlice, TableSlice};
-use std::borrow::Borrow;
+use crate::{Table, TableOperations, Value, TableError, Row, RowSlice, TableSlice, ValueType};
 
 pub struct MMapTableInner {
     columns: Vec<String>,
     mmap: MmapMut,
     rows: Vec<usize>,
+    schema: Option<Vec<ValueType>>
 }
 
 pub struct MMapTable (Arc<Mutex<MMapTableInner>>);
 
 impl MMapTable {
-    pub fn new<P: AsRef<Path>>(file :P) -> Result<Self, IOError> {
+    pub fn from_csv<P: AsRef<Path>>(file :P) -> Result<Self, IOError> {
+        let table_inner = MMapTable::map_file(file)?;
+
+        Ok(MMapTable (Arc::new(Mutex::new(table_inner))))
+    }
+
+    pub fn from_csv_with_schema<P: AsRef<Path>>(file :P, schema :&[ValueType]) -> Result<Self, IOError> {
+        let mut table_inner = MMapTable::map_file(file)?;
+
+        table_inner.schema = Some(schema.to_vec());
+
+        Ok(MMapTable (Arc::new(Mutex::new(table_inner))))
+    }
+
+    // Maps the file and returns the struct... used for the create functions
+    fn map_file<P: AsRef<Path>>(file :P) -> Result<MMapTableInner, IOError> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -71,12 +87,12 @@ impl MMapTable {
             return Err(IOError::new(ErrorKind::InvalidData, "Duplicate columns detected in the file"));
         }
 
-        Ok(MMapTable (
-            Arc::new(Mutex::new(MMapTableInner{
-                columns,
-                mmap,
-                rows
-        }))))
+        Ok(MMapTableInner {
+            columns,
+            mmap,
+            rows,
+            schema: None
+        })
     }
 }
 
@@ -125,7 +141,9 @@ impl TableOperations for MMapTable {
     }
 
     fn columns(&self) -> Vec<String> {
-        self.0.lock().unwrap().borrow().columns.clone()
+        let inner = self.0.lock().unwrap();
+
+        inner.columns.clone()
     }
 
     fn group_by(&self, column: &str) -> Result<HashMap<Value, Self::TableSliceType, RandomState>, TableError> {
@@ -134,6 +152,14 @@ impl TableOperations for MMapTable {
 
     fn filter_by<P: FnMut(&Self::RowType) -> bool>(&self, mut predicate: P) -> Result<Self::TableSliceType, TableError> {
         let mut slice_rows = Vec::new();
+
+        // self.iter().enumerate().par_bridge().filter_map(|(i,r)| {
+        //     if predicate(&r) {
+        //         Some(i)
+        //     } else {
+        //         None
+        //     }
+        // });
 
         for (i, row) in self.iter().enumerate() {
             if predicate(&row) {
@@ -206,7 +232,14 @@ impl Row for RowSlice<MMapTableInner> {
                 (ends[pos-1], ends[pos])
             };
 
-            Ok(Value::new(String::from_utf8(output[s..e].to_vec()).unwrap().as_str()))
+            let value = String::from_utf8(output[s..e].to_vec()).unwrap();
+
+            // use the schema if we have it
+            Ok(if let Some(schema) = self.schema {
+                Value::with_type(value.as_str(), schema[pos])
+            } else {
+                Value::new(value.as_str())
+            })
         } else {
             let err_str = format!("Could not parse column {}: {:?}", column, res);
             Err(TableError::new(err_str.as_str()))
@@ -284,11 +317,11 @@ impl TableOperations for MMapTableSlice {
 }
 
 impl TableSlice for MMapTableSlice {
-    fn sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, compare: F) -> Result<Self::TableSliceType, TableError> {
+    fn rename_column(&self, old_col :&str, new_col :&str) -> Result<Self::TableSliceType, TableError> {
         unimplemented!()
     }
 
-    fn rename_column(&self, old_col :&str, new_col :&str) -> Result<Self::TableSliceType, TableError> {
+    fn sort_by<F: FnMut(Self::RowType, Self::RowType) -> Ordering>(&self, compare: F) -> Result<Self::TableSliceType, TableError> {
         unimplemented!()
     }
 }
@@ -332,7 +365,7 @@ mod tests {
         LOGGER_INIT.call_once(|| simple_logger::init_with_level(Level::Debug).unwrap()); // this will panic on error
 
         let start = Instant::now();
-        let table = MMapTable::new("/export/stock_stuff/199x_100_sample.csv").unwrap();
+        let table = MMapTable::from_csv("/export/stock_stuff/199x_100_sample.csv").unwrap();
         let end = Instant::now();
 
         println!("COLS: {:?}", table.columns());
