@@ -105,8 +105,8 @@ impl Value {
                 Value::DateTime(dt)
             },
             ValueType::DateTimeFormat(format) => Value::DateTime(NaiveDateTime::parse_from_str(value, format).expect(format!("Error parsing DateTime: {} using {}", value, format).as_str())),
-            ValueType::DateFormat(format) => Value::Date(NaiveDate::parse_from_str(value, format).unwrap()),
-            ValueType::TimeFormat(format) => Value::Time(NaiveTime::parse_from_str(value, format).unwrap()),
+            ValueType::DateFormat(format) => Value::Date(NaiveDate::parse_from_str(value, format).expect(format!("Error parsing Date: {} using {}", value, format).as_str())),
+            ValueType::TimeFormat(format) => Value::Time(NaiveTime::parse_from_str(value, format).expect(format!("Error parsing Time: {} using {}", value, format).as_str())),
             ValueType::Number => {
                 if let Ok(f) = value.parse::<f64>() {
                     Value::Float(OrderedFloat(f))

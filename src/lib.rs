@@ -21,6 +21,7 @@ pub use crate::value::{Value, ValueType};
 pub use crate::table_error::TableError;
 
 // this is all the immutable stuff about the table itself
+#[derive(Debug)]
 struct LargeTableInner {
     columns: Vec<String>,   // mapping of column names to row offsets
     mmap: Mmap,
@@ -33,6 +34,7 @@ pub struct LargeTable {
     rows: Vec<usize>,       // offset into the mmap/array of the start of each row
 }
 
+#[derive(Debug)]
 pub struct Row {
     table: Arc<LargeTableInner>,
     row_offset: usize,
@@ -93,6 +95,18 @@ impl Row {
     }
 }
 
+impl Display for Row {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for col in self.columns() {
+            if let Err(e) = write!(f, "{}: {}\t", col, self.get(&col)) {
+                return Err(e)
+            }
+        }
+
+        Ok( () )
+    }
+}
+
 /// `Iterator` for rows in a table.
 pub struct LargeTableIter {
     table: LargeTable,
@@ -130,7 +144,7 @@ impl LargeTable {
         let mmap = unsafe { Mmap::map(&file)? };
 
         let mut reader = CsvCoreReader::new();
-        let mut rows = vec![0usize];
+        let mut rows = Vec::new();
         let mut pos = 0;
         let mut output = [0u8; 1024*1024];
 
@@ -139,7 +153,7 @@ impl LargeTable {
 
             let (res, read, _written, _num_ends) = reader.read_record(&mmap[pos..], &mut output, &mut ends);
 
-//            println!("POS: {} RES: {:?} READ: {} WRITTEN: {} NUM_ENDS: {}", pos, res, read, written, num_ends);
+           // println!("POS: {} RES: {:?} READ: {} WRITTEN: {} NUM_ENDS: {}", pos, res, read, written, num_ends);
 
             if let ReadRecordResult::End = res {
                 break;
@@ -328,6 +342,8 @@ impl LargeTable {
 #[cfg(test)] extern crate simple_logger;
 #[cfg(test)] extern crate rand;
 #[cfg(test)] use std::sync::{Once};
+use std::fmt::{Display, Formatter};
+use std::fmt;
 
 #[cfg(test)] static LOGGER_INIT: Once = Once::new();
 
