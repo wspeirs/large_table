@@ -7,7 +7,7 @@ use std::path::Path;
 use std::collections::{HashMap, HashSet};
 use std::cmp::Ordering;
 use std::fs::OpenOptions;
-use std::sync::{Arc};
+use std::sync::{Arc, Mutex};
 
 use bstr::ByteSlice;
 use memmap::{Mmap};
@@ -22,6 +22,9 @@ mod table_error;
 pub use crate::value::{Value, ValueType};
 pub use crate::table_error::TableError;
 
+// type ColumnOffsets = SmallVec<[(usize,usize); 32]>;
+type ColumnOffsets = Vec<(usize,usize)>;
+
 // this is all the immutable stuff about the table itself
 #[derive(Debug)]
 struct LargeTableInner {
@@ -33,13 +36,13 @@ struct LargeTableInner {
 
 pub struct LargeTable {
     inner: Arc<LargeTableInner>,
-    rows: Vec<Vec<(usize, usize)>>,       // offset into the mmap/array of the start of each row
+    rows: Vec<ColumnOffsets>,       // offset into the mmap/array of the start of each row
 }
 
 #[derive(Debug)]
 pub struct Row {
     table: Arc<LargeTableInner>,
-    col_offsets: Vec<(usize, usize)>,
+    col_offsets: ColumnOffsets,
 }
 
 impl Row {
@@ -178,6 +181,7 @@ impl LargeTable {
 
             if let ReadRecordResult::Record = res {
                 let mut row = Vec::with_capacity(ends.len() + 1);
+                // let mut row :SmallVec<[(usize,usize); 32]> = SmallVec::with_capacity(ends.len() + 1);
 
                 // go through the ends, making start/end pairs:
                 for i in 0..num_ends {
@@ -221,22 +225,6 @@ impl LargeTable {
 
         // try and conserve some memory here
         rows.shrink_to_fit();
-
-        // let header_end = rows[0][0].0;
-        // let mut header_buffer = vec![0u8; header_end];
-        //
-        // header_buffer.copy_from_slice(&mmap[0..header_end]);
-        //
-        // println!("HEADER: {:?}", header_buffer);
-        //
-        // let mut header_reader = Reader::from_reader(header_buffer.as_slice());
-        //
-        // let columns = header_reader.headers()?.iter().map(|header| String::from(header)).collect::<Vec<_>>();
-        //
-        // // not the fastest way to do this, but it's a small collection of items
-        // if columns.iter().collect::<HashSet<_>>().len() != columns.len() {
-        //     return Err(IOError::new(ErrorKind::InvalidData, "Duplicate columns detected in the file"));
-        // }
 
         let inner = LargeTableInner {
             columns,
@@ -301,22 +289,59 @@ impl LargeTable {
     }
 
     pub fn group_by(&self, column :&str) -> Result<HashMap<Value, LargeTable>, TableError> {
-        let col_vals = self.unique(column)?;
-        let mut ret = HashMap::with_capacity(col_vals.len());
+        let index = self.column_position(column)?;
+        let ret = Arc::new(Mutex::new(HashMap::new()));
 
-        for val in col_vals {
-            ret.insert(val.clone(), self.filter(column, &val)?);
-        }
+        self.rows.par_iter().enumerate().for_each(|(i, offsets)| {
+            let val = unsafe { str::from_utf8_unchecked(&self.inner.mmap[offsets[index].0..offsets[index].1]) };
 
-        Ok(ret)
+            let mut ret_lock = ret.lock().unwrap();
+
+            ret_lock.entry(val).or_insert(Vec::new()).push(self.rows[i].clone());
+        });
+
+        let ret_lock = ret.lock().unwrap();
+
+        Ok(ret_lock.par_iter().map(|(v, r)| {
+            let val = if let Some(schema) = self.inner.schema.as_ref() {
+                Value::with_type(v, &schema[index])
+            } else {
+                Value::new(v)
+            };
+
+            (val, LargeTable {
+                inner: self.inner.clone(),
+                rows: r.clone()
+            })
+        }).collect::<HashMap<_, _>>())
+
+        // let col_vals = self.unique(column)?;
+        // let mut ret = HashMap::with_capacity(col_vals.len());
+        //
+        // for val in col_vals {
+        //     ret.insert(val.clone(), self.filter(column, &val)?);
+        // }
+        //
+        // Ok(ret)
     }
 
     /// Get a set of unique values for a given column
     pub fn unique(&self, column :&str) -> Result<HashSet<Value>, TableError>  {
         let index = self.column_position(column)?;
 
-        // insert the values into the HashSet
-        Ok(self.iter().par_bridge().map(|row| row.at(index).clone()).collect::<HashSet<Value>>())
+        // collect all the values as strings first
+        let vals = self.rows.par_iter().map(|offsets| {
+            unsafe { str::from_utf8_unchecked(&self.inner.mmap[offsets[index].0..offsets[index].1]) }
+        }).collect::<HashSet<_>>();
+
+        // then convert them to values
+        Ok(vals.par_iter().map(|v| {
+            if let Some(schema) = self.inner.schema.as_ref() {
+                Value::with_type(v, &schema[index])
+            } else {
+                Value::new(v)
+            }
+        }).collect::<HashSet<_>>())
     }
 
     /// Returns a `LargeTable` with only those rows that match the value in that column
@@ -399,6 +424,7 @@ impl LargeTable {
 #[cfg(test)] use std::sync::{Once};
 use std::fmt::{Display, Formatter};
 use std::fmt;
+use smallvec::SmallVec;
 
 #[cfg(test)] static LOGGER_INIT: Once = Once::new();
 
