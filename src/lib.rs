@@ -1,6 +1,7 @@
 //! large_table is an memory-mapping of data, modeled after [Pandas](https://pandas.pydata.org/) for Python.
 extern crate log;
 
+use std::str;
 use std::io::{Error as IOError, ErrorKind};
 use std::path::Path;
 use std::collections::{HashMap, HashSet};
@@ -8,6 +9,7 @@ use std::cmp::Ordering;
 use std::fs::OpenOptions;
 use std::sync::{Arc};
 
+use bstr::ByteSlice;
 use memmap::{Mmap};
 use csv_core::{Reader as CsvCoreReader, ReadRecordResult};
 use csv::{Reader};
@@ -31,13 +33,13 @@ struct LargeTableInner {
 
 pub struct LargeTable {
     inner: Arc<LargeTableInner>,
-    rows: Vec<usize>,       // offset into the mmap/array of the start of each row
+    rows: Vec<Vec<(usize, usize)>>,       // offset into the mmap/array of the start of each row
 }
 
 #[derive(Debug)]
 pub struct Row {
     table: Arc<LargeTableInner>,
-    row_offset: usize,
+    col_offsets: Vec<(usize, usize)>,
 }
 
 impl Row {
@@ -58,12 +60,13 @@ impl Row {
     }
 
     pub fn try_at(&self, index :usize) -> Result<Value, TableError> {
+/*
         // parse the row
         let mut reader = CsvCoreReader::new();
         let mut output = [0u8; 1024*1024];
         let mut ends = [0usize; 100];
 
-        let (res, _read, _written, _num_ends) = reader.read_record(&self.table.mmap[self.row_offset..], &mut output, &mut ends);
+        let (res, _read, _written, _num_ends) = reader.read_record(&self.table.mmap[self.col_offsets..], &mut output, &mut ends);
 
         if let ReadRecordResult::Record = res {
             let (s, e) = if index == 0 {
@@ -72,15 +75,27 @@ impl Row {
                 (ends[index-1], ends[index])
             };
 
+            let val = unsafe { str::from_utf8_unchecked(&output[s..e]) };
+
             // check to see if we have a schema to use or not
             if let Some(value_types) = self.table.schema.as_ref() {
-                Ok(Value::with_type(String::from_utf8(output[s..e].to_vec()).unwrap().as_str(), &value_types[index]))
+                Ok(Value::with_type(val, &value_types[index]))
             } else {
-                Ok(Value::new(String::from_utf8(output[s..e].to_vec()).unwrap().as_str()))
+                Ok(Value::new(val))
             }
         } else {
             let err_str = format!("Could not parse column {}: {:?}", index, res);
             Err(TableError::new(err_str.as_str()))
+        }
+ */
+
+        let val = unsafe { str::from_utf8_unchecked(&self.table.mmap[self.col_offsets[index].0..self.col_offsets[index].1]) };
+
+        // check to see if we have a schema to use or not
+        if let Some(value_types) = self.table.schema.as_ref() {
+            Ok(Value::with_type(val, &value_types[index]))
+        } else {
+            Ok(Value::new(val))
         }
     }
 
@@ -122,7 +137,7 @@ impl Iterator for LargeTableIter {
         } else {
             let ret = Some(Row {
                 table: self.table.inner.clone(),
-                row_offset: self.table.rows[self.cur_pos],
+                col_offsets: self.table.rows[self.cur_pos].clone(), // TODO: use reference
             });
 
             self.cur_pos += 1;
@@ -142,6 +157,7 @@ impl LargeTable {
             .open(&file)?;
 
         let mmap = unsafe { Mmap::map(&file)? };
+        let mut columns = Vec::new();
 
         let mut reader = CsvCoreReader::new();
         let mut rows = Vec::new();
@@ -151,37 +167,76 @@ impl LargeTable {
         loop {
             let mut ends = [0usize; 100];
 
-            let (res, read, _written, _num_ends) = reader.read_record(&mmap[pos..], &mut output, &mut ends);
+            let (res, read, written, num_ends) = reader.read_record(&mmap[pos..], &mut output, &mut ends);
 
-           // println!("POS: {} RES: {:?} READ: {} WRITTEN: {} NUM_ENDS: {}", pos, res, read, written, num_ends);
+            // println!("POS: {} RES: {:?} READ: {} WRITTEN: {} NUM_ENDS: {}", pos, res, read, written, num_ends);
+            // println!("OUTPUT: {:?} {}", str::from_utf8(&output[0..20]).unwrap(), ends[0]);
 
             if let ReadRecordResult::End = res {
                 break;
             }
 
-            pos += read;
-
             if let ReadRecordResult::Record = res {
-                rows.push(pos);
+                let mut row = Vec::with_capacity(ends.len() + 1);
+
+                // go through the ends, making start/end pairs:
+                for i in 0..num_ends {
+
+                    if i == 0 {
+                        // println!("0: {} Searching for {} in {}", ends[i], str::from_utf8(&output[0..1]).unwrap(), str::from_utf8(&mmap[pos..(pos+20)]).unwrap());
+
+                        let start = mmap[pos..].find_byte(output[0]).expect("Could not find character in mmap, but was in output");
+
+                        row.push( (pos+start, pos+start+ends[i]) );
+                    } else {
+                        // println!("{} Searching for '{}' in {}", (ends[i] - ends[i-1]), str::from_utf8(&output[ends[i-1]..(ends[i-1]+1)]).unwrap(), str::from_utf8(&mmap[pos..(pos+20)]).unwrap());
+                        let start = mmap[pos..].find_byte(output[ends[i-1]]).expect("Could not find character in mmap, but was in output");
+
+                        row.push( (pos+start, pos+start+(ends[i]-ends[i-1])) );
+                    }
+
+                    // println!("POS: {} -> {}", pos, row.last().unwrap().1);
+                    pos = row.last().unwrap().1;
+                }
+
+                // print!("ROW: ");
+                // for (s,e) in row.iter() {
+                //     print!("{}|", str::from_utf8(&mmap[*s..*e]).unwrap());
+                // }
+                // println!();
+
+                // the first row is the column header
+                if columns.is_empty() {
+                    for (s,e) in row.iter() {
+                        columns.push(String::from_utf8(mmap[*s..*e].to_vec()).unwrap());
+                    }
+                } else {
+                    rows.push(row);
+                }
+            } else {
+                // println!("IN HERE: {:?}", res);
+                pos += read;
             }
         }
 
-        // take off the last position as it's the END of the row
-        rows.pop();
+        // try and conserve some memory here
         rows.shrink_to_fit();
 
-        let mut header_buffer = vec![0u8; rows[1]];
-
-        header_buffer.copy_from_slice(&mmap[0..rows[1]]);
-
-        let mut header_reader = Reader::from_reader(header_buffer.as_slice());
-
-        let columns = header_reader.headers()?.iter().map(|header| String::from(header)).collect::<Vec<_>>();
-
-        // not the fastest way to do this, but it's a small collection of items
-        if columns.iter().collect::<HashSet<_>>().len() != columns.len() {
-            return Err(IOError::new(ErrorKind::InvalidData, "Duplicate columns detected in the file"));
-        }
+        // let header_end = rows[0][0].0;
+        // let mut header_buffer = vec![0u8; header_end];
+        //
+        // header_buffer.copy_from_slice(&mmap[0..header_end]);
+        //
+        // println!("HEADER: {:?}", header_buffer);
+        //
+        // let mut header_reader = Reader::from_reader(header_buffer.as_slice());
+        //
+        // let columns = header_reader.headers()?.iter().map(|header| String::from(header)).collect::<Vec<_>>();
+        //
+        // // not the fastest way to do this, but it's a small collection of items
+        // if columns.iter().collect::<HashSet<_>>().len() != columns.len() {
+        //     return Err(IOError::new(ErrorKind::InvalidData, "Duplicate columns detected in the file"));
+        // }
 
         let inner = LargeTableInner {
             columns,
@@ -217,7 +272,7 @@ impl LargeTable {
         }
 
         Ok(Row {
-            row_offset: self.rows[index],
+            col_offsets: self.rows[index].clone(), // TODO: use reference
             table: self.inner.clone(),
         })
     }
@@ -275,7 +330,7 @@ impl LargeTable {
     pub fn filter_by<P: Fn(&Row) -> bool + Sync + Send>(&self, predicate :P) -> Result<LargeTable, TableError> {
         let new_rows = self.iter().enumerate().par_bridge().filter_map(|(index, row)| {
             if predicate(&row) {
-                Some(self.rows[index])
+                Some(self.rows[index].clone()) // TODO: use reference
             } else {
                 None
             }
@@ -324,8 +379,8 @@ impl LargeTable {
 
         // sort the rows using the comparator
         new_rows.sort_unstable_by(|offset1, offset2| {
-            let r1 = Row { row_offset: *offset1, table: self.inner.clone() };
-            let r2 = Row { row_offset: *offset2, table: self.inner.clone() };
+            let r1 = Row { col_offsets: offset1.clone(), table: self.inner.clone() };
+            let r2 = Row { col_offsets: offset2.clone(), table: self.inner.clone() };
 
             compare(&r1, &r2)
         });
